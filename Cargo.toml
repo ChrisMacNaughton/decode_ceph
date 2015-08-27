@@ -1,4 +1,7 @@
 [package]
-name = "DecodeCeph"
+name = "decode_ceph"
 version = "0.1.0"
 authors = ["Chris Holcombe <xfactor973@gmail.com>"]
+
+[dependencies]
+byteorder = "*"

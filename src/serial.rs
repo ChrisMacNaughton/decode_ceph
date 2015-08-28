@@ -1,17 +1,19 @@
 extern crate byteorder;
-use self::byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use self::byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::io;
 use std::io::ErrorKind;
 use std::io::Cursor;
 use std::io::prelude::*;
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
 use std::net::TcpStream;
 //There will be no padding between the elements and the elements will be sent in the order they appear
+//const CEPH_BANNER: str = "ceph v027";
 /*
 #define CEPH_BANNER "ceph v027"
 #define CEPH_BANNER_MAX_LEN 30
-
 
 typedef u32le epoch_t;
 typedef u32le ceph_seq_t;
@@ -20,10 +22,55 @@ typedef u64le version_t;
 */
 #[cfg(test)]
 mod tests{
+    use std::io::Cursor;
+    use std::io::prelude::*;
+    use std::net::TcpStream;
     //Replay captured data and test results
     #[test]
     fn test_connect(){
+        let banner = String::from("ceph v027");
+        //Connect to monitor port
+        let mut stream = TcpStream::connect("10.0.3.216:6789").unwrap();
+        let mut buf: Vec<u8> = Vec::new();
+        //recv banner
+        (&mut stream).take(9).read_to_end(&mut buf).unwrap();
+        println!("Banner received: {}", String::from_utf8(buf).unwrap()); //we're on a roll :D
+        //send banner
+        println!("Writing banner back to Ceph");
+        let mut bytes_written = stream.write(&banner.into_bytes()).unwrap();
+        println!("Wrote {} bytes back to Ceph", bytes_written);
+        //Get the sockaddr_storage
+        /*
+        struct sockaddr_storage {
+            sa_family_t  ss_family;     // address family //unsigned int
 
+            // all this is padding, implementation specific, ignore it:
+            char      __ss_pad1[_SS_PAD1SIZE];
+            int64_t   __ss_align;
+            char      __ss_pad2[_SS_PAD2SIZE];
+         };*/
+
+        //recv this:
+        let mut ceph_response_bytes = vec![
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x02,0x1a,0x85,0x0a,0x00,0x03,0xd8,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x02,0x88,0x50,0x0a,0x00,0x03,0x90,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+        ];
+        let mut cursor = Cursor::new(&mut ceph_response_bytes[..]);
+        super::decode_entity_addr_t(&mut cursor);
     }
     #[test]
     fn test_connect_reply(){
@@ -178,16 +225,34 @@ struct CephMsgHeader {
     reserved: u16,
     crc: u32,
 }
-
+/*
 impl CephPrimitive for CephMsgHeader{
     fn read_from_wire(x: &mut CephReader)->Result<CephMsgHeader, SerialError>{
-        return;
+        return Ok(
+            CephMsgHeader{
+            sequence: 0,
+            transaction_id: 0,
+            msg_type: 0,
+            priority: 0,
+            front_len: 0,
+            middle_len: 0,
+            data_len: 0,
+            data_off: 0,
+            entity_name: CephEntityName{
+                entity_type: CephEntity::Mon,
+                num: 0
+            },
+            compat_version: 0,
+            reserved: 0,
+            crc: 0,
+            }
+            );
     }
     fn write_to_wire(x: &mut CephWriter, v: Self)->Option<SerialError>{
         return None
     }
 }
-
+*/
 struct CephMsgFooter {
     front_crc: u32,
     middle_crc: u32,
@@ -195,7 +260,7 @@ struct CephMsgFooter {
     crypto_sig: u64,
     flags: u8
 }
-
+/*
 impl CephPrimitive for CephMsgFooter{
     fn read_from_wire(x: &mut CephReader)->Result<CephMsgFooter, SerialError>{
         return;
@@ -204,12 +269,12 @@ impl CephPrimitive for CephMsgFooter{
         return None
     }
 }
-
+*/
 struct CephMsgTagAck{
     tag: CephMsg, //0x08
     seq: u64 //Sequence number of msg being acknowledged
 }
-
+/*
 impl CephPrimitive for CephMsgTagAck{
     fn read_from_wire(x: &mut CephReader)->Result<CephMsgTagAck, SerialError>{
         return;
@@ -218,12 +283,12 @@ impl CephPrimitive for CephMsgTagAck{
         return None
     }
 }
-
+*/
 struct CephMsgKeepAlive{
     tag: CephMsg, //0x09
     data: u8, // No data
 }
-
+/*
 impl CephPrimitive for CephMsgKeepAlive{
     fn read_from_wire(x: &mut CephReader)->Result<CephMsgKeepAlive, SerialError>{
         return;
@@ -232,12 +297,12 @@ impl CephPrimitive for CephMsgKeepAlive{
         return None
     }
 }
-
+*/
 struct CephMsgKeepAlive2{
     tag: CephMsg, //0x0E
     timestamp: Utime,
 }
-
+/*
 impl CephPrimitive for CephMsgKeepAlive2{
     fn read_from_wire(x: &mut CephReader)->Result<CephMsgKeepAlive2, SerialError>{
         return;
@@ -246,12 +311,12 @@ impl CephPrimitive for CephMsgKeepAlive2{
         return None
     }
 }
-
+*/
 struct CephMsgKeepAlive2Ack{
     tag: CephMsg, //0x0F
     timestamp: Utime,
 }
-
+/*
 impl CephPrimitive for CephMsgKeepAlive2Ack{
     fn read_from_wire(x: &mut CephReader)->Result<CephMsgKeepAlive2Ack, SerialError>{
         return;
@@ -260,7 +325,75 @@ impl CephPrimitive for CephMsgKeepAlive2Ack{
         return None
     }
 }
+*/
+fn decode_entity_addr_t<R: Read>(cursor: &mut R){
+    /*
+    C_SIZE_SOCKADDR_STORAGE = 128
+    943         V(C_IPv4, 0x0002, "IPv4") \
+    944         V(C_IPv6, 0x000A, "IPv6")
 
+    1898         /*
+    1899         struct sockaddr_storage {
+    1900                 guint16 family;
+    1901                 guint8  pad[???]; // Implementation defined.
+    1902         };
+    1903         struct sockaddr_in {
+    1904                 guint16 family;
+    1905                 guint16 port;
+    1906                 guint32 addr;
+    1907                 guint8  pad[8];
+    1908         };
+    1909         struct sockaddr_in6 {
+    1910                 guint16 family;
+    1911                 guint16 port;
+    1912                 guint32 flow;
+    1913                 guint8  addr[16];
+    1914                 guint32 scope;
+    1915         };
+    1916         */
+    1917
+     */
+    //type
+    let addr_type = cursor.read_u32::<LittleEndian>().unwrap();
+    println!("Type: {}", addr_type);
+    //type-str
+    let nonce = cursor.read_u32::<LittleEndian>().unwrap();
+    println!("Nonce: {}", nonce);
+    let address_family = cursor.read_u16::<BigEndian>().unwrap();
+    println!("Address_family: {}", address_family);
+    match address_family{
+        0x0002 => {
+            println!("IPv4 Addr");
+            let port = cursor.read_u16::<BigEndian>().unwrap();
+            println!("Port {}", port);
+            let a = cursor.read_u8().unwrap();
+            let b = cursor.read_u8().unwrap();
+            let c = cursor.read_u8().unwrap();
+            let d = cursor.read_u8().unwrap();
+            let ip = Ipv4Addr::new(a,b,c,d);
+            println!("IPv4 Addr_string: {}", ip);
+        },
+        0x000A =>{
+            //TODO: Test this
+            println!("IPv6 Addr");
+            let port = cursor.read_u16::<BigEndian>().unwrap();
+            println!("Port {}", port);
+            let a = cursor.read_u16::<BigEndian>().unwrap();
+            let b = cursor.read_u16::<BigEndian>().unwrap();
+            let c = cursor.read_u16::<BigEndian>().unwrap();
+            let d = cursor.read_u16::<BigEndian>().unwrap();
+            let e = cursor.read_u16::<BigEndian>().unwrap();
+            let f = cursor.read_u16::<BigEndian>().unwrap();
+            let g = cursor.read_u16::<BigEndian>().unwrap();
+            let h = cursor.read_u16::<BigEndian>().unwrap();
+            let ip = Ipv6Addr::new(a,b,c,d,e,f,g,h);
+            println!("IPv6 Addr_string: {}", ip);
+        }
+        _ => {
+            println!("Unknown addr type");
+        }
+    }
+}
 /*
 struct ceph_list<T> {
         u32le length;

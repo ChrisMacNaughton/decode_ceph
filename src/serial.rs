@@ -165,7 +165,17 @@ impl CephPrimitive for CephMsgConnect{
         })
     }
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-        return Ok(Vec::new());
+        let mut buffer: Vec<u8> = Vec::new();
+        try!(buffer.write_u64::<LittleEndian>(self.features));
+        try!(buffer.write_u32::<LittleEndian>(self.host_type));
+        try!(buffer.write_u32::<LittleEndian>(self.global_seq));
+        try!(buffer.write_u32::<LittleEndian>(self.connect_seq));
+        try!(buffer.write_u32::<LittleEndian>(self.protocol_version));
+        try!(buffer.write_u32::<LittleEndian>(self.authorizer_protocol));
+        try!(buffer.write_u32::<LittleEndian>(self.authorizer_len));
+        try!(buffer.write_u8(self.flags));
+
+        return Ok(buffer);
     }
 }
 

@@ -13,8 +13,8 @@ use std::net::{Ipv4Addr,Ipv6Addr,TcpStream};
 //There will be no padding between the elements and the elements will be sent in the order they appear
 //const CEPH_BANNER: str = "ceph v027";
 /*
-#define CEPH_BANNER "ceph v027"
-#define CEPH_BANNER_MAX_LEN 30
+CEPH_BANNER "ceph v027"
+CEPH_BANNER_MAX_LEN 30
 
 typedef u32le epoch_t;
 typedef u32le ceph_seq_t;
@@ -32,7 +32,7 @@ mod tests{
     fn test_connect(){
         let banner = String::from("ceph v027");
         //Connect to monitor port
-        let mut stream = TcpStream::connect("10.0.3.216:6789").unwrap();
+        let mut stream = TcpStream::connect("10.0.3.144:6789").unwrap();
         let mut buf: Vec<u8> = Vec::new();
         //recv banner
         (&mut stream).take(9).read_to_end(&mut buf).unwrap();
@@ -59,7 +59,28 @@ mod tests{
         let mut sockaddr_cursor = Cursor::new(&mut buf[..]);
         println!("Decoding live Ceph server sockaddr_storage");
         super::decode_entity_addr(&mut sockaddr_cursor);
+
+        let connect = super::CephMsgConnect{
+            features: 0,
+            host_type: 0,
+            global_seq: 0,
+            connect_seq: 0,
+            protocol_version: 0,
+            authorizer_protocol: 0,
+            authorizer_len: 0,
+            flags: 0,
+            authorizer: Vec::new(),
+        };
+        let connect_bytes = connect.write_to_wire().unwrap();
+        println!("Writing CephConnectMsg to Ceph {:?}", &connect_bytes);
+        bytes_written = stream.write(&connect_bytes).unwrap();
+        println!("Wrote {} bytes", bytes_written);
+
+        //Get the connection reply
+        (&mut stream).take(136).read_to_end(&mut buf).unwrap();
+
         //recv this:
+        /*
         let mut ceph_response_bytes = vec![
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x02,0x1a,0x85,0x0a,0x00,0x03,0xd8,0x00, //17
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, //34
@@ -86,6 +107,7 @@ mod tests{
         let msg_header = super::CephMsgHeader::read_from_wire(&mut cursor);
         println!("Msg header: {:?}", msg_header);
         println!("Cursor position: {}", cursor.position());
+        */
     }
     #[test]
     fn test_connect_reply(){
@@ -203,7 +225,7 @@ impl CephPrimitive for CephMsgReply{
         let authorizer = Vec::new();
 
         return Ok(CephMsgReply{
-            tag: CephMsg::from_u8(tag).unwrap(),
+            tag: CephMsg::from_u8(tag).unwrap(), //TODO Eliminate this
             features: features,
             global_seq: global_seq,
             connect_seq: connect_seq,
@@ -282,6 +304,80 @@ enum CephMsg{
 }
 }
 
+enum_from_primitive! {
+enum CephMsgType{
+    // monitor internal
+    MsgMonScrub = 64,
+    MsgMonElection = 65,
+    MsgMonPaxos = 66,
+    MsgMonProbe= 67,
+    MsgMonJoin = 68,
+    MsgMonSync = 69,
+    /* monitor <-> mon admin tool */
+    MsgMonCommand = 50,
+    MsgMonCommandAck = 51,
+    MsgLog = 52,
+    MsgLogack = 53,
+    //MsgMonObserve = 54,
+    //MsgMonObserveNotify = 55,
+    MsgClass = 56,
+    MsgClassAck = 57,
+    MsgGetpoolstats  = 58,
+    MsgGetpoolstatsreply = 59,
+    MsgMonGlobalId = 60,
+    MsgRoute = 47,
+    MsgForward = 46,
+    MsgPaxos = 40,
+    MsgOsdPing = 70,
+    MsgOsdBoot = 71,
+    MsgOsdFailure = 72,
+    MsgOsdAlive = 73,
+    MsgOsdMarkMeDown = 74,
+    MsgOsdSubop = 76,
+    MsgOsdSubopreply = 77,
+    MsgOsdPgtemp = 78,
+    MsgOsdPgNotify = 80,
+    MsgOsdPgQuery = 81,
+    MsgOsdPgSummary = 82,
+    MsgOsdPgLog = 83,
+    MsgOsdPgRemove = 84,
+    MsgOsdPgInfo = 85,
+    MsgOsdPgTrim = 86,
+    MsgPgstats = 87,
+    MsgPgstatsack = 88,
+    MsgOsdPgCreate = 89,
+    MsgRemoveSnaps = 90,
+    MsgOsdScrub = 91,
+    MsgOsdPgMissing = 92,
+    MsgOsdRepScrub = 93,
+    MsgOsdPgScan = 94,
+    MsgOsdPgBackfill = 95,
+    MsgCommand = 97,
+    MsgCommandReply = 98,
+    MsgOsdBackfillReserve=99,
+    MsgOsdRecoveryReserve=150,
+    MsgOsdPgPush = 105,
+    MsgOsdPgPull = 106,
+    MsgOsdPgPushReply= 107,
+    MsgOsdEcWrite =  108,
+    MsgOsdEcWriteReply=109,
+    MsgOsdEcRead = 110,
+    MsgOsdEcReadReply =111,
+    MsgOsdRepop = 112,
+    MsgOsdRepopreply = 113,
+    // *** generic ***
+    MsgTimecheck = 0x600,
+    MsgMonHealth = 0x601,
+    // *** Message::encode() crcflags bits ***
+    MsgCrcData = (1 << 0),
+    MsgCrcHeader = (1 << 1),
+    //MsgCrcAll = (MsgCrcData | MsgCrcHeader),
+    // Xio Testing
+    MsgDataPing = 0x602,
+    MsgNop = 0x607,
+}
+}
+
 #[derive(Debug)]
 struct CephEntityName{
     entity_type: CephEntity,
@@ -338,14 +434,14 @@ impl CephPrimitive for CephMsgHeader{
             sequence_num: sequenece_num,
             transaction_id: transcation_id,
             msg_type: msg_type,
-            priority: CephPriority::from_u16(priority).unwrap(),
+            priority: CephPriority::from_u16(priority).unwrap(),//TODO eliminate this
             version: version,
             front_len: front_len,
             middle_len: middle_len,
             data_len: data_len,
             data_off: data_off,
             entity_name: CephEntityName{
-                entity_type: CephEntity::from_u8(entity_type).unwrap(),
+                entity_type: CephEntity::from_u8(entity_type).unwrap(),//TODO eliminate this
                 num: entity_id,
             },
             compat_version: compat_version,
@@ -423,30 +519,50 @@ struct CephMsgTagAck{
     tag: CephMsg, //0x08
     seq: u64 //Sequence number of msg being acknowledged
 }
-/*
+
 impl CephPrimitive for CephMsgTagAck{
-    fn read_from_wire(x: &mut CephReader)->Result<CephMsgTagAck, SerialError>{
-        return;
+    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let tag = try!(cursor.read_u8());
+        let seq = try!(cursor.read_u64::<LittleEndian>());
+
+        return Ok(CephMsgTagAck{
+            tag: CephMsg::from_u8(tag).unwrap(),
+            seq: seq,
+        });
     }
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-        return Ok(Vec::new());
+        let mut buffer: Vec<u8> = Vec::new();
+
+        try!(buffer.write_u8(self.tag.clone() as u8));
+        try!(buffer.write_u64::<LittleEndian>(self.seq));
+        return Ok(buffer);
     }
 }
-*/
+
 struct CephMsgKeepAlive{
     tag: CephMsg, //0x09
     data: u8, // No data
 }
-/*
+
 impl CephPrimitive for CephMsgKeepAlive{
-    fn read_from_wire(x: &mut CephReader)->Result<CephMsgKeepAlive, SerialError>{
-        return;
+    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let tag = try!(cursor.read_u8());
+        let data = try!(cursor.read_u8());
+
+        return Ok(CephMsgKeepAlive{
+            tag: CephMsg::from_u8(tag).unwrap(),
+            data: data,
+        });
     }
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-        return Ok(Vec::new());
+        let mut buffer: Vec<u8> = Vec::new();
+
+        try!(buffer.write_u8(self.tag.clone() as u8));
+        try!(buffer.write_u8(self.data));
+        return Ok(buffer);
     }
 }
-*/
+
 struct CephMsgKeepAlive2{
     tag: CephMsg, //0x0E
     timestamp: Utime,
@@ -455,7 +571,7 @@ struct CephMsgKeepAlive2{
 impl CephPrimitive for CephMsgKeepAlive2{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
         let tag = try!(cursor.read_u8());
-        let msg = CephMsg::from_u8(tag).unwrap();
+        let msg = CephMsg::from_u8(tag).unwrap();//TODO eliminate this
         let tv_sec = try!(cursor.read_u32::<LittleEndian>());
         let tv_nsec = try!(cursor.read_u32::<LittleEndian>());
         let time = Utime {
@@ -486,7 +602,7 @@ struct CephMsgKeepAlive2Ack{
 impl CephPrimitive for CephMsgKeepAlive2Ack{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
         let tag = try!(cursor.read_u8());
-        let msg = CephMsg::from_u8(tag).unwrap();
+        let msg = CephMsg::from_u8(tag).unwrap();//TODO eliminate this
 
         let tv_sec = try!(cursor.read_u32::<LittleEndian>());
         let tv_nsec = try!(cursor.read_u32::<LittleEndian>());
@@ -529,7 +645,7 @@ fn encode_entity_addr(addr: EntityAddr) -> Result<Vec<u8>, SerialError>{
 
         //Port
         try!(buffer.write_u16::<BigEndian>(addr.port));
-        let tmp = addr.v4addr.unwrap();
+        let tmp = addr.v4addr.unwrap();//TODO eliminate this
         for octet in tmp.octets().iter(){
             try!(buffer.write_u8(*octet));
         }
@@ -540,7 +656,7 @@ fn encode_entity_addr(addr: EntityAddr) -> Result<Vec<u8>, SerialError>{
         //Port
         try!(buffer.write_u16::<BigEndian>(addr.port));
 
-        let tmp = addr.v6addr.unwrap();
+        let tmp = addr.v6addr.unwrap();//TODO eliminate this
         for octet in tmp.segments().iter(){
             try!(buffer.write_u16::<BigEndian>(*octet));
         }

@@ -4,10 +4,8 @@ extern crate num;
 use self::num::FromPrimitive;
 
 use self::byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::collections::HashMap;
-use std::hash::Hash;
 use std::io;
-use std::io::{Cursor, ErrorKind};
+use std::io::{ErrorKind};
 use std::io::prelude::*;
 use std::net::{Ipv4Addr,Ipv6Addr,TcpStream};
 //There will be no padding between the elements and the elements will be sent in the order they appear
@@ -175,8 +173,8 @@ trait CephPrimitive {
 
 #[derive(Debug)]
 struct CephMsgConnect{
-    features: u64,
-    host_type: u32,
+    features: u64, //Composed of CephFeature bitflags
+    host_type: CephEntity, //u32
     global_seq: u32,
     connect_seq: u32,
     protocol_version: u32,
@@ -200,7 +198,7 @@ impl CephPrimitive for CephMsgConnect{
 
         return Ok(CephMsgConnect{
             features: features,
-            host_type: host_type,
+            host_type: CephEntity::from_u32(host_type).unwrap(),
             global_seq: global_seq,
             connect_seq: connect_seq,
             protocol_version: protocol_version,
@@ -213,7 +211,7 @@ impl CephPrimitive for CephMsgConnect{
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
         try!(buffer.write_u64::<LittleEndian>(self.features));
-        try!(buffer.write_u32::<LittleEndian>(self.host_type));
+        try!(buffer.write_u32::<LittleEndian>(self.host_type.clone() as u32));
         try!(buffer.write_u32::<LittleEndian>(self.global_seq));
         try!(buffer.write_u32::<LittleEndian>(self.connect_seq));
         try!(buffer.write_u32::<LittleEndian>(self.protocol_version));
@@ -285,6 +283,7 @@ struct CephMsgrMsg {
 }
 
 enum_from_primitive!{
+#[repr(u32)]
 #[derive(Debug, Clone)]
 enum CephEntity{
     Mon=1,
@@ -296,134 +295,147 @@ enum CephEntity{
 }
 }
 
+#[derive(Debug, Clone)]
+enum Crypto {
+    None = 0,
+    Aes = 1,
+}
+
+#[derive(Debug, Clone)]
+enum Protocol{
+    OsdProtocol = 24, /*server/client*/
+    MdsProtocol = 32, /*server/client*/
+    MonProtocol = 15, /*server/client*/
+}
+
 bitflags!{
     flags CephFeatures: u64 {
-        const CephFeatureUid  = 1u64 <<0,
-        const CephFeatureNosrcaddr = 1u64 <<1,
-        const CephFeatureMonclockcheck = 1u64 <<2,
-        const CephFeatureFlock = 1u64 << 3,
-        const CephFeatureSubscribe2 = 1u64 <<4,
-        const CephFeatureMonname = 1u64 <<5,
-        const CephFeatureReconnectSeq = 1u64 <<6,
-        const CephFeatureDirlayouthash = 1u64 << 7,
-        const CephFeatureObjectlocator = 1u64 << 8,
-        const CephFeaturePgid64 = 1u64 << 9,
-        const CephFeatureIncsubosdmap = 1u64 << 10,
-        const CephFeaturePgpool3 = 1u64 << 11,
-        const CephFeatureOsdreplymux = 1u64 << 12,
-        const CephFeatureOsdenc = 1u64 << 13,
-        const CephFeatureOmap = 1u64 << 14,
-        const CephFeatureQueryT = 1u64 << 15,
-        const CephFeatureMonenc = 1u64 << 16,
-        const CephFeatureIndepPgMap = 1u64 << 17,
-        const CephFeatureCrushTunables = 1u64 << 18,
-        const CephFeatureChunkyScrub = 1u64 << 19,
-        const CephFeatureMonNullroute = 1u64 << 20,
-        const CephFeatureMonGv = 1u64 << 21,
-        const CephFeatureBackfillReservation = 1u64 << 22,
-        const CephFeatureMsgAuth = 1u64 << 23,
-        const CephFeatureRecoveryReservation = 1u64 << 24,
-        const CephFeatureCrushTunables1 = 1u64 << 25,
-        const CephFeatureCreatepoolid = 1u64 << 26,
-        const CephFeatureReplyCreateInode = 1u64 << 27,
-        const CephFeatureOsdHbmsgs = 1u64 << 28,
-        const CephFeatureMdsenc = 1u64 << 29,
-        const CephFeatureOsdhashpspool = 1u64 << 30,
-        const CephFeatureMonSinglePaxos = 1u64 << 31,
-        const CephFeatureOsdSnapmapper = 1u64 << 32,
-        const CephFeatureMonScrub = 1u64 << 33,
-        const CephFeatureOsdPackedRecovery = 1u64 << 34,
-        const CephFeatureOsdCachepool = 1u64 << 35,
-        const CephFeatureCrushV2 = 1u64 << 36,
-        const CephFeatureExportPeer = 1u64 << 37,
-        const CephFeatureOsdErasureCodes = 1u64 << 38,
-        const CephFeatureOsdmapEnc = 1u64 << 39,
-        const CephFeatureMdsInlineData = 1u64 << 40,
-        const CephFeatureCrushTunables3 = 1u64 << 41,
-        const CephFeatureOsdPrimaryAffinity = 1u64 << 41, //overlap with tunables3
-        const CephFeatureMsgrKeepalive2 = 1u64 << 42,
-        const CephFeatureOsdPoolresend = 1u64 << 43,
-        const CephFeatureErasureCodePluginsV2 = 1u64 << 44,
-        const CephFeatureOsdSetAllocHint = 1u64 << 45,
-        const CephFeatureOsdFadviseFlags = 1u64 << 46,
-        const CephFeatureOsdRepop = 1u64 << 46, //overlap with fadvice
-        const CephFeatureOsdObjectDigest = 1u64 << 46, //overlap with fadvice
-        const CephFeatureOsdTransactionMayLayout = 1u64 << 46, //overlap with fadvice
-        const CephFeatureMdsQuota = 1u64 << 47,
-        const CephFeatureCrushV4 = 1u64 << 48,
-        const CephFeatureOsdMinSizeRecovery = 1u64 << 49, //overlap
-    	const CephFeatureOsdProxyFeatures = 1u64 << 49,
-        const CephFeatureMonMetadata = 1u64 << 50,
-        const CephFeatureOsdBitwiseHobjSort = 1u64 << 51,
-        const CephFeatureErasureCodePluginsV3 = 1u64 << 52,
-        const CephFeatureOsdProxyWriteFeatures = 1u64 << 53,
-        const CephFeatureOsdHitsetGmt = 1u64 << 54,
-    	const CephFeatureReserved2 = 1u64 << 61,
-    	const CephFeatureReserved = 1u64 << 62,
-    	const CephFeatureReservedBroken = 1u64 << 63,
-        const CephAll = CephFeatureUid.bits
-            | CephFeatureNosrcaddr.bits
-            | CephFeatureMonclockcheck.bits
-            | CephFeatureFlock.bits
-            | CephFeatureSubscribe2.bits
-            | CephFeatureMonname.bits
-            | CephFeatureReconnectSeq.bits
-            | CephFeatureDirlayouthash.bits
-            | CephFeatureObjectlocator.bits
-            | CephFeaturePgid64.bits
-            | CephFeatureIncsubosdmap.bits
-            | CephFeaturePgpool3.bits
-            | CephFeatureOsdreplymux.bits
-            | CephFeatureOsdenc.bits
-            | CephFeatureOmap.bits
-            | CephFeatureQueryT.bits
-            | CephFeatureMonenc.bits
-            | CephFeatureIndepPgMap.bits
-            | CephFeatureCrushTunables.bits
-            | CephFeatureChunkyScrub.bits
-            | CephFeatureMonNullroute.bits
-            | CephFeatureMonGv.bits
-            | CephFeatureBackfillReservation.bits
-            | CephFeatureMsgAuth.bits
-            | CephFeatureRecoveryReservation.bits
-            | CephFeatureCrushTunables1.bits
-            | CephFeatureCreatepoolid.bits
-            | CephFeatureReplyCreateInode.bits
-            | CephFeatureOsdHbmsgs.bits
-            | CephFeatureMdsenc.bits
-            | CephFeatureOsdhashpspool.bits
-            | CephFeatureMonSinglePaxos.bits
-            | CephFeatureOsdSnapmapper.bits
-            | CephFeatureMonScrub.bits
-            | CephFeatureOsdPackedRecovery.bits
-            | CephFeatureOsdCachepool.bits
-            | CephFeatureCrushV2.bits
-            | CephFeatureExportPeer.bits
-            | CephFeatureOsdErasureCodes.bits
-            | CephFeatureOsdmapEnc.bits
-            | CephFeatureMdsInlineData.bits
-            | CephFeatureCrushTunables3.bits
-            | CephFeatureOsdPrimaryAffinity.bits
-            | CephFeatureMsgrKeepalive2.bits
-            | CephFeatureOsdPoolresend.bits
-            | CephFeatureErasureCodePluginsV2.bits
-            | CephFeatureOsdSetAllocHint.bits
-            | CephFeatureOsdFadviseFlags.bits
-            | CephFeatureOsdRepop.bits
-            | CephFeatureOsdObjectDigest.bits
-            | CephFeatureOsdTransactionMayLayout.bits
-            | CephFeatureMdsQuota.bits
-            | CephFeatureCrushV4.bits
-            | CephFeatureOsdMinSizeRecovery.bits
-            | CephFeatureOsdProxyFeatures.bits
-            | CephFeatureMonMetadata.bits
-            | CephFeatureOsdBitwiseHobjSort.bits
-            | CephFeatureErasureCodePluginsV3.bits
-            | CephFeatureOsdProxyWriteFeatures.bits
-            | CephFeatureOsdHitsetGmt.bits
-            | CephFeatureReserved2.bits
-            | CephFeatureReserved.bits
-            | CephFeatureReservedBroken.bits,
+        const CEPH_FEATURE_UID  = 1u64 <<0,
+        const CEPH_FEATURE_NOSRCADDR = 1u64 <<1,
+        const CEPH_FEATURE_MONCLOCKCHECK = 1u64 <<2,
+        const CEPH_FEATURE_FLOCK = 1u64 << 3,
+        const CEPH_FEATURE_SUBSCRIBE2 = 1u64 <<4,
+        const CEPH_FEATURE_MONNAME = 1u64 <<5,
+        const CEPH_FEATURE_RECONNECT_SEQ = 1u64 <<6,
+        const CEPH_FEATURE_DIRLAYOUTHASH = 1u64 << 7,
+        const CEPH_FEATURE_OBJECTLOCATOR = 1u64 << 8,
+        const CEPH_FEATURE_PGID64 = 1u64 << 9,
+        const CEPH_FEATURE_INCSUBOSDMAP = 1u64 << 10,
+        const CEPH_FEATURE_PGPOOL3 = 1u64 << 11,
+        const CEPH_FEATURE_OSDREPLYMUX = 1u64 << 12,
+        const CEPH_FEATURE_OSDENC = 1u64 << 13,
+        const CEPH_FEATURE_OMAP = 1u64 << 14,
+        const CEPH_FEATURE_QUERY_T = 1u64 << 15,
+        const CEPH_FEATURE_MONENC = 1u64 << 16,
+        const CEPH_FEATURE_INDEP_PG_MAP = 1u64 << 17,
+        const CEPH_FEATURE_CRUSH_TUNABLES = 1u64 << 18,
+        const CEPH_FEATURE_CHUNKY_SCRUB = 1u64 << 19,
+        const CEPH_FEATURE_MON_NULLROUTE = 1u64 << 20,
+        const CEPH_FEATURE_MON_GV = 1u64 << 21,
+        const CEPH_FEATURE_BACKFILL_RESERVATION = 1u64 << 22,
+        const CEPH_FEATURE_MSG_AUTH = 1u64 << 23,
+        const CEPH_FEATURE_RECOVERY_RESERVATION = 1u64 << 24,
+        const CEPH_FEATURE_CRUSH_TUNABLES1 = 1u64 << 25,
+        const CEPH_FEATURE_CREATEPOOLID = 1u64 << 26,
+        const CEPH_FEATURE_REPLY_CREATE_INODE = 1u64 << 27,
+        const CEPH_FEATURE_OSD_HBMSGS = 1u64 << 28,
+        const CEPH_FEATURE_MDSENC = 1u64 << 29,
+        const CEPH_FEATURE_OSDHASHPSPOOL = 1u64 << 30,
+        const CEPH_FEATURE_MON_SINGLE_PAXOS = 1u64 << 31,
+        const CEPH_FEATURE_OSD_SNAPMAPPER = 1u64 << 32,
+        const CEPH_FEATURE_MON_SCRUB = 1u64 << 33,
+        const CEPH_FEATURE_OSD_PACKED_RECOVERY = 1u64 << 34,
+        const CEPH_FEATURE_OSD_CACHEPOOL = 1u64 << 35,
+        const CEPH_FEATURE_CRUSH_V2 = 1u64 << 36,
+        const CEPH_FEATURE_EXPORT_PEER = 1u64 << 37,
+        const CEPH_FEATURE_OSD_ERASURE_CODES = 1u64 << 38,
+        const CEPH_FEATURE_OSDMAP_ENC = 1u64 << 39,
+        const CEPH_FEATURE_MDS_INLINE_DATA = 1u64 << 40,
+        const CEPH_FEATURE_CRUSH_TUNABLES3 = 1u64 << 41,
+        const CEPH_FEATURE_OSD_PRIMARY_AFFINITY = 1u64 << 41, //overlap with tunables3
+        const CEPH_FEATURE_MSGR_KEEPALIVE2 = 1u64 << 42,
+        const CEPH_FEATURE_OSD_POOLRESEND = 1u64 << 43,
+        const CEPH_FEATURE_ERASURE_CODE_PLUGINS_V2 = 1u64 << 44,
+        const CEPH_FEATURE_OSD_SET_ALLOC_HINT = 1u64 << 45,
+        const CEPH_FEATURE_OSD_FADVISE_FLAGS = 1u64 << 46,
+        const CEPH_FEATURE_OSD_REPOP = 1u64 << 46, //overlap with fadvice
+        const CEPH_FEATURE_OSD_OBJECT_DIGEST = 1u64 << 46, //overlap with fadvice
+        const CEPH_FEATURE_OSD_TRANSACTION_MAY_LAYOUT = 1u64 << 46, //overlap with fadvice
+        const CEPH_FEATURE_MDS_QUOTA = 1u64 << 47,
+        const CEPH_FEATURE_CRUSH_V4 = 1u64 << 48,
+        const CEPH_FEATURE_OSD_MIN_SIZE_RECOVERY = 1u64 << 49, //overlap
+    	const CEPH_FEATURE_OSD_PROXY_FEATURES = 1u64 << 49,
+        const CEPH_FEATURE_MON_METADATA = 1u64 << 50,
+        const CEPH_FEATURE_OSD_BITWISE_HOBJ_SORT = 1u64 << 51,
+        const CEPH_FEATURE_ERASURE_CODE_PLUGINS_V3 = 1u64 << 52,
+        const CEPH_FEATURE_OSD_PROXY_WRITE_FEATURES = 1u64 << 53,
+        const CEPH_FEATURE_OSD_HITSET_GMT = 1u64 << 54,
+    	const CEPH_FEATURE_RESERVED2 = 1u64 << 61,
+    	const CEPH_FEATURE_RESERVED = 1u64 << 62,
+    	const CEPH_FEATURE_RESERVED_BROKEN = 1u64 << 63,
+        const CEPH_ALL = CEPH_FEATURE_UID.bits
+            | CEPH_FEATURE_NOSRCADDR.bits
+            | CEPH_FEATURE_MONCLOCKCHECK.bits
+            | CEPH_FEATURE_FLOCK.bits
+            | CEPH_FEATURE_SUBSCRIBE2.bits
+            | CEPH_FEATURE_MONNAME.bits
+            | CEPH_FEATURE_RECONNECT_SEQ.bits
+            | CEPH_FEATURE_DIRLAYOUTHASH.bits
+            | CEPH_FEATURE_OBJECTLOCATOR.bits
+            | CEPH_FEATURE_PGID64.bits
+            | CEPH_FEATURE_INCSUBOSDMAP.bits
+            | CEPH_FEATURE_PGPOOL3.bits
+            | CEPH_FEATURE_OSDREPLYMUX.bits
+            | CEPH_FEATURE_OSDENC.bits
+            | CEPH_FEATURE_OMAP.bits
+            | CEPH_FEATURE_QUERY_T.bits
+            | CEPH_FEATURE_MONENC.bits
+            | CEPH_FEATURE_INDEP_PG_MAP.bits
+            | CEPH_FEATURE_CRUSH_TUNABLES.bits
+            | CEPH_FEATURE_CHUNKY_SCRUB.bits
+            | CEPH_FEATURE_MON_NULLROUTE.bits
+            | CEPH_FEATURE_MON_GV.bits
+            | CEPH_FEATURE_BACKFILL_RESERVATION.bits
+            | CEPH_FEATURE_MSG_AUTH.bits
+            | CEPH_FEATURE_RECOVERY_RESERVATION.bits
+            | CEPH_FEATURE_CRUSH_TUNABLES1.bits
+            | CEPH_FEATURE_CREATEPOOLID.bits
+            | CEPH_FEATURE_REPLY_CREATE_INODE.bits
+            | CEPH_FEATURE_OSD_HBMSGS.bits
+            | CEPH_FEATURE_MDSENC.bits
+            | CEPH_FEATURE_OSDHASHPSPOOL.bits
+            | CEPH_FEATURE_MON_SINGLE_PAXOS.bits
+            | CEPH_FEATURE_OSD_SNAPMAPPER.bits
+            | CEPH_FEATURE_MON_SCRUB.bits
+            | CEPH_FEATURE_OSD_PACKED_RECOVERY.bits
+            | CEPH_FEATURE_OSD_CACHEPOOL.bits
+            | CEPH_FEATURE_CRUSH_V2.bits
+            | CEPH_FEATURE_EXPORT_PEER.bits
+            | CEPH_FEATURE_OSD_ERASURE_CODES.bits
+            | CEPH_FEATURE_OSDMAP_ENC.bits
+            | CEPH_FEATURE_MDS_INLINE_DATA.bits
+            | CEPH_FEATURE_CRUSH_TUNABLES3.bits
+            | CEPH_FEATURE_OSD_PRIMARY_AFFINITY.bits
+            | CEPH_FEATURE_MSGR_KEEPALIVE2.bits
+            | CEPH_FEATURE_OSD_POOLRESEND.bits
+            | CEPH_FEATURE_ERASURE_CODE_PLUGINS_V2.bits
+            | CEPH_FEATURE_OSD_SET_ALLOC_HINT.bits
+            | CEPH_FEATURE_OSD_FADVISE_FLAGS.bits
+            | CEPH_FEATURE_OSD_REPOP.bits
+            | CEPH_FEATURE_OSD_OBJECT_DIGEST.bits
+            | CEPH_FEATURE_OSD_TRANSACTION_MAY_LAYOUT.bits
+            | CEPH_FEATURE_MDS_QUOTA.bits
+            | CEPH_FEATURE_CRUSH_V4.bits
+            | CEPH_FEATURE_OSD_MIN_SIZE_RECOVERY.bits
+            | CEPH_FEATURE_OSD_PROXY_FEATURES.bits
+            | CEPH_FEATURE_MON_METADATA.bits
+            | CEPH_FEATURE_OSD_BITWISE_HOBJ_SORT.bits
+            | CEPH_FEATURE_ERASURE_CODE_PLUGINS_V3.bits
+            | CEPH_FEATURE_OSD_PROXY_WRITE_FEATURES.bits
+            | CEPH_FEATURE_OSD_HITSET_GMT.bits
+            | CEPH_FEATURE_RESERVED2.bits
+            | CEPH_FEATURE_RESERVED.bits
+            | CEPH_FEATURE_RESERVED_BROKEN.bits,
     }
 }
 

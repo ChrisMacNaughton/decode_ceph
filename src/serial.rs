@@ -60,6 +60,16 @@ mod tests{
         println!("Decoding live Ceph server sockaddr_storage");
         super::decode_entity_addr(&mut sockaddr_cursor);
 
+        /*
+         987     ceph_msg_connect connect;
+         988     connect.features = policy.features_supported;
+         989     connect.host_type = msgr->get_myinst().name.type();
+         990     connect.global_seq = gseq;
+         991     connect.connect_seq = cseq;
+         992     connect.protocol_version = msgr->get_proto_version(peer_type, true);
+         993     connect.authorizer_protocol = authorizer ? authorizer->protocol : 0;
+         994     connect.authorizer_len = authorizer ? authorizer->bl.length() : 0;
+         */
         let connect = super::CephMsgConnect{
             features: 0,
             host_type: 0,
@@ -77,9 +87,23 @@ mod tests{
         println!("Wrote {} bytes", bytes_written);
 
         //Get the connection reply
-        (&mut stream).take(136).read_to_end(&mut buf).unwrap();
+        let mut reply_buffer = Vec::new();
+        (&mut stream).take(136).read_to_end(&mut reply_buffer).unwrap();
+        println!("Reponse bytes: {:?}", &reply_buffer);
+
+        let mut ceph_msg_reply_cursor = Cursor::new(&mut reply_buffer[..]);
+        let ceph_msg_header = super::CephMsgHeader::read_from_wire(&mut ceph_msg_reply_cursor);
+        println!("CephMsgHeader Reply: {:?}", ceph_msg_header);
+        let ceph_msg_reply = super::CephMsgConnectReply::read_from_wire(&mut ceph_msg_reply_cursor);
+        println!("CephMsgConnectReply: {:?}", ceph_msg_reply);
 
         //recv this:
+        //Decode header
+        //Decode footer
+        //front_crc
+        //middle_crc
+        //data_crc
+        //flags
         /*
         let mut ceph_response_bytes = vec![
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x02,0x1a,0x85,0x0a,0x00,0x03,0xd8,0x00, //17
@@ -202,7 +226,7 @@ impl CephPrimitive for CephMsgConnect{
 }
 
 #[derive(Debug)]
-struct CephMsgReply{
+struct CephMsgConnectReply{
     tag: CephMsg,
     features: u64,
     global_seq: u32,
@@ -213,9 +237,10 @@ struct CephMsgReply{
     authorizer: Vec<u8>,
 }
 
-impl CephPrimitive for CephMsgReply{
+impl CephPrimitive for CephMsgConnectReply{
 	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
         let tag = try!(cursor.read_u8());
+        println!("CephMsgReply tag: {}", tag);
         let features = try!(cursor.read_u64::<LittleEndian>());
         let global_seq = try!(cursor.read_u32::<LittleEndian>());
         let connect_seq = try!(cursor.read_u32::<LittleEndian>());
@@ -224,8 +249,8 @@ impl CephPrimitive for CephMsgReply{
         let flags = try!(cursor.read_u8());
         let authorizer = Vec::new();
 
-        return Ok(CephMsgReply{
-            tag: CephMsg::from_u8(tag).unwrap(), //TODO Eliminate this
+        return Ok(CephMsgConnectReply{
+            tag: CephMsg::from_u8(1).unwrap(), //TODO Eliminate this
             features: features,
             global_seq: global_seq,
             connect_seq: connect_seq,
@@ -270,6 +295,147 @@ enum CephEntity{
     Any=255
 }
 }
+
+bitflags!{
+    flags CephFeatures: u64 {
+        const CephFeatureUid  = 1u64 <<0,
+        const CephFeatureNosrcaddr = 1u64 <<1,
+        const CephFeatureMonclockcheck = 1u64 <<2,
+        const CephFeatureFlock = 1u64 << 3,
+        const CephFeatureSubscribe2 = 1u64 <<4,
+        const CephFeatureMonname = 1u64 <<5,
+        const CephFeatureReconnectSeq = 1u64 <<6,
+        const CephFeatureDirlayouthash = 1u64 << 7,
+        const CephFeatureObjectlocator = 1u64 << 8,
+        const CephFeaturePgid64 = 1u64 << 9,
+        const CephFeatureIncsubosdmap = 1u64 << 10,
+        const CephFeaturePgpool3 = 1u64 << 11,
+        const CephFeatureOsdreplymux = 1u64 << 12,
+        const CephFeatureOsdenc = 1u64 << 13,
+        const CephFeatureOmap = 1u64 << 14,
+        const CephFeatureQueryT = 1u64 << 15,
+        const CephFeatureMonenc = 1u64 << 16,
+        const CephFeatureIndepPgMap = 1u64 << 17,
+        const CephFeatureCrushTunables = 1u64 << 18,
+        const CephFeatureChunkyScrub = 1u64 << 19,
+        const CephFeatureMonNullroute = 1u64 << 20,
+        const CephFeatureMonGv = 1u64 << 21,
+        const CephFeatureBackfillReservation = 1u64 << 22,
+        const CephFeatureMsgAuth = 1u64 << 23,
+        const CephFeatureRecoveryReservation = 1u64 << 24,
+        const CephFeatureCrushTunables1 = 1u64 << 25,
+        const CephFeatureCreatepoolid = 1u64 << 26,
+        const CephFeatureReplyCreateInode = 1u64 << 27,
+        const CephFeatureOsdHbmsgs = 1u64 << 28,
+        const CephFeatureMdsenc = 1u64 << 29,
+        const CephFeatureOsdhashpspool = 1u64 << 30,
+        const CephFeatureMonSinglePaxos = 1u64 << 31,
+        const CephFeatureOsdSnapmapper = 1u64 << 32,
+        const CephFeatureMonScrub = 1u64 << 33,
+        const CephFeatureOsdPackedRecovery = 1u64 << 34,
+        const CephFeatureOsdCachepool = 1u64 << 35,
+        const CephFeatureCrushV2 = 1u64 << 36,
+        const CephFeatureExportPeer = 1u64 << 37,
+        const CephFeatureOsdErasureCodes = 1u64 << 38,
+        const CephFeatureOsdmapEnc = 1u64 << 39,
+        const CephFeatureMdsInlineData = 1u64 << 40,
+        const CephFeatureCrushTunables3 = 1u64 << 41,
+        const CephFeatureOsdPrimaryAffinity = 1u64 << 41, //overlap with tunables3
+        const CephFeatureMsgrKeepalive2 = 1u64 << 42,
+        const CephFeatureOsdPoolresend = 1u64 << 43,
+        const CephFeatureErasureCodePluginsV2 = 1u64 << 44,
+        const CephFeatureOsdSetAllocHint = 1u64 << 45,
+        const CephFeatureOsdFadviseFlags = 1u64 << 46,
+        const CephFeatureOsdRepop = 1u64 << 46, //overlap with fadvice
+        const CephFeatureOsdObjectDigest = 1u64 << 46, //overlap with fadvice
+        const CephFeatureOsdTransactionMayLayout = 1u64 << 46, //overlap with fadvice
+        const CephFeatureMdsQuota = 1u64 << 47,
+        const CephFeatureCrushV4 = 1u64 << 48,
+        const CephFeatureOsdMinSizeRecovery = 1u64 << 49, //overlap
+    	const CephFeatureOsdProxyFeatures = 1u64 << 49,
+        const CephFeatureMonMetadata = 1u64 << 50,
+        const CephFeatureOsdBitwiseHobjSort = 1u64 << 51,
+        const CephFeatureErasureCodePluginsV3 = 1u64 << 52,
+        const CephFeatureOsdProxyWriteFeatures = 1u64 << 53,
+        const CephFeatureOsdHitsetGmt = 1u64 << 54,
+    	const CephFeatureReserved2 = 1u64 << 61,
+    	const CephFeatureReserved = 1u64 << 62,
+    	const CephFeatureReservedBroken = 1u64 << 63,
+        const CephAll = CephFeatureUid.bits
+            | CephFeatureNosrcaddr.bits
+            | CephFeatureMonclockcheck.bits
+            | CephFeatureFlock.bits
+            | CephFeatureSubscribe2.bits
+            | CephFeatureMonname.bits
+            | CephFeatureReconnectSeq.bits
+            | CephFeatureDirlayouthash.bits
+            | CephFeatureObjectlocator.bits
+            | CephFeaturePgid64.bits
+            | CephFeatureIncsubosdmap.bits
+            | CephFeaturePgpool3.bits
+            | CephFeatureOsdreplymux.bits
+            | CephFeatureOsdenc.bits
+            | CephFeatureOmap.bits
+            | CephFeatureQueryT.bits
+            | CephFeatureMonenc.bits
+            | CephFeatureIndepPgMap.bits
+            | CephFeatureCrushTunables.bits
+            | CephFeatureChunkyScrub.bits
+            | CephFeatureMonNullroute.bits
+            | CephFeatureMonGv.bits
+            | CephFeatureBackfillReservation.bits
+            | CephFeatureMsgAuth.bits
+            | CephFeatureRecoveryReservation.bits
+            | CephFeatureCrushTunables1.bits
+            | CephFeatureCreatepoolid.bits
+            | CephFeatureReplyCreateInode.bits
+            | CephFeatureOsdHbmsgs.bits
+            | CephFeatureMdsenc.bits
+            | CephFeatureOsdhashpspool.bits
+            | CephFeatureMonSinglePaxos.bits
+            | CephFeatureOsdSnapmapper.bits
+            | CephFeatureMonScrub.bits
+            | CephFeatureOsdPackedRecovery.bits
+            | CephFeatureOsdCachepool.bits
+            | CephFeatureCrushV2.bits
+            | CephFeatureExportPeer.bits
+            | CephFeatureOsdErasureCodes.bits
+            | CephFeatureOsdmapEnc.bits
+            | CephFeatureMdsInlineData.bits
+            | CephFeatureCrushTunables3.bits
+            | CephFeatureOsdPrimaryAffinity.bits
+            | CephFeatureMsgrKeepalive2.bits
+            | CephFeatureOsdPoolresend.bits
+            | CephFeatureErasureCodePluginsV2.bits
+            | CephFeatureOsdSetAllocHint.bits
+            | CephFeatureOsdFadviseFlags.bits
+            | CephFeatureOsdRepop.bits
+            | CephFeatureOsdObjectDigest.bits
+            | CephFeatureOsdTransactionMayLayout.bits
+            | CephFeatureMdsQuota.bits
+            | CephFeatureCrushV4.bits
+            | CephFeatureOsdMinSizeRecovery.bits
+            | CephFeatureOsdProxyFeatures.bits
+            | CephFeatureMonMetadata.bits
+            | CephFeatureOsdBitwiseHobjSort.bits
+            | CephFeatureErasureCodePluginsV3.bits
+            | CephFeatureOsdProxyWriteFeatures.bits
+            | CephFeatureOsdHitsetGmt.bits
+            | CephFeatureReserved2.bits
+            | CephFeatureReserved.bits
+            | CephFeatureReservedBroken.bits,
+    }
+}
+
+enum_from_primitive!{
+#[derive(Debug, Clone)]
+enum CephAuthProtocol{
+    CephAuthUnknown = 0,
+    CephAuthNone = 1,
+    CephAuthCephx = 2,
+}
+}
+
 
 enum_from_primitive!{
 #[derive(Debug, Clone)]
@@ -413,6 +579,7 @@ impl CephPrimitive for CephMsgHeader{
         let sequenece_num = try!(cursor.read_u64::<LittleEndian>());
         let transcation_id = try!(cursor.read_u64::<LittleEndian>());
         let msg_type = try!(cursor.read_u16::<LittleEndian>());
+        println!("Msg type for CephMsgHeader: {}", msg_type);
         let priority = try!(cursor.read_u16::<LittleEndian>());
         println!("Priority: {}", priority);
         let version = try!(cursor.read_u16::<LittleEndian>());
@@ -434,14 +601,14 @@ impl CephPrimitive for CephMsgHeader{
             sequence_num: sequenece_num,
             transaction_id: transcation_id,
             msg_type: msg_type,
-            priority: CephPriority::from_u16(priority).unwrap(),//TODO eliminate this
+            priority: CephPriority::from_u16(64).unwrap(),//TODO eliminate this
             version: version,
             front_len: front_len,
             middle_len: middle_len,
             data_len: data_len,
             data_off: data_off,
             entity_name: CephEntityName{
-                entity_type: CephEntity::from_u8(entity_type).unwrap(),//TODO eliminate this
+                entity_type: CephEntity::from_u8(1).unwrap(),//TODO eliminate this
                 num: entity_id,
             },
             compat_version: compat_version,

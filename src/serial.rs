@@ -1,4 +1,5 @@
 extern crate byteorder;
+use crypto;
 
 extern crate num;
 use self::num::FromPrimitive;
@@ -35,10 +36,12 @@ mod tests{
         //recv banner
         (&mut stream).take(9).read_to_end(&mut buf).unwrap();
         println!("Banner received: {}", String::from_utf8(buf).unwrap()); //we're on a roll :D
+
         //send banner
         println!("Writing banner back to Ceph");
         let mut bytes_written = stream.write(&banner.into_bytes()).unwrap();
         println!("Wrote {} bytes back to Ceph", bytes_written);
+
         //Send sockaddr_storage
         let client_info = super::EntityAddr{
             port: 0,
@@ -46,17 +49,19 @@ mod tests{
             v4addr: Some(Ipv4Addr::new(192,168,1,6)),
             v6addr: None,
         };
+
         //send sock_addr_storage
-        let client_sock_addr_bytes = super::encode_entity_addr(client_info).unwrap();
-        println!("Writing client info back to Ceph: {:?}", &client_sock_addr_bytes);
+        let client_sock_addr_bytes = client_info.write_to_wire().unwrap();
         let mut bytes_written = stream.write(&client_sock_addr_bytes).unwrap();
+        println!("Wrote {} bytes back to Ceph", bytes_written);
 
         //Get server sockaddr_storage
         buf = Vec::new();
         (&mut stream).take(136).read_to_end(&mut buf).unwrap();
-        let mut sockaddr_cursor = Cursor::new(&mut buf[..]);
-        println!("Decoding live Ceph server sockaddr_storage");
-        super::decode_entity_addr(&mut sockaddr_cursor);
+        let mut server_sockaddr_cursor = Cursor::new(&mut buf[..]);
+        println!("Decoding Ceph server sockaddr_storage bytes {:?}", server_sockaddr_cursor);
+        let server_entity_addr = super::EntityAddr::read_from_wire(&mut server_sockaddr_cursor).unwrap();
+        println!("Server entity_addr: {:?}", server_entity_addr);
 
         /*
          987     ceph_msg_connect connect;
@@ -69,12 +74,12 @@ mod tests{
          994     connect.authorizer_len = authorizer ? authorizer->bl.length() : 0;
          */
         let connect = super::CephMsgConnect{
-            features: 0,
-            host_type: 0,
-            global_seq: 0,
+            features: super::CEPH_ALL,
+            host_type: super::CephEntity::Client,
+            global_seq: 1,
             connect_seq: 0,
-            protocol_version: 0,
-            authorizer_protocol: 0,
+            protocol_version: 15,
+            authorizer_protocol: super::CephAuthProtocol::CephAuthNone,
             authorizer_len: 0,
             flags: 0,
             authorizer: Vec::new(),
@@ -89,11 +94,12 @@ mod tests{
         (&mut stream).take(136).read_to_end(&mut reply_buffer).unwrap();
         println!("Reponse bytes: {:?}", &reply_buffer);
 
+        //Decode it
         let mut ceph_msg_reply_cursor = Cursor::new(&mut reply_buffer[..]);
-        let ceph_msg_header = super::CephMsgHeader::read_from_wire(&mut ceph_msg_reply_cursor);
-        println!("CephMsgHeader Reply: {:?}", ceph_msg_header);
         let ceph_msg_reply = super::CephMsgConnectReply::read_from_wire(&mut ceph_msg_reply_cursor);
         println!("CephMsgConnectReply: {:?}", ceph_msg_reply);
+
+        //I think I need to setup the authorizer stuff now and negotiate a cephx connection
 
         //recv this:
         //Decode header
@@ -173,12 +179,12 @@ trait CephPrimitive {
 
 #[derive(Debug)]
 struct CephMsgConnect{
-    features: u64, //Composed of CephFeature bitflags
+    features: CephFeatures, //Composed of CephFeature bitflags
     host_type: CephEntity, //u32
     global_seq: u32,
     connect_seq: u32,
     protocol_version: u32,
-    authorizer_protocol: u32,
+    authorizer_protocol: CephAuthProtocol,
     authorizer_len: u32,
     flags: u8,
     authorizer: Vec<u8>,
@@ -186,8 +192,8 @@ struct CephMsgConnect{
 
 impl CephPrimitive for CephMsgConnect{
 	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let features = try!(cursor.read_u64::<LittleEndian>());
-        println!("Features: {:x}", features);
+        let feature_bits = try!(cursor.read_u64::<LittleEndian>());
+        println!("Feature_bits: {:x}", feature_bits);
         let host_type = try!(cursor.read_u32::<LittleEndian>());
         let global_seq = try!(cursor.read_u32::<LittleEndian>());
         let connect_seq = try!(cursor.read_u32::<LittleEndian>());
@@ -197,12 +203,12 @@ impl CephPrimitive for CephMsgConnect{
         let flags = try!(cursor.read_u8());
 
         return Ok(CephMsgConnect{
-            features: features,
+            features: CephFeatures::from_bits(feature_bits).unwrap(),
             host_type: CephEntity::from_u32(host_type).unwrap(),
             global_seq: global_seq,
             connect_seq: connect_seq,
             protocol_version: protocol_version,
-            authorizer_protocol: authorizer_protocol,
+            authorizer_protocol: CephAuthProtocol::from_u32(authorizer_protocol).unwrap(),
             authorizer_len: authorizer_len,
             flags: flags,
             authorizer: Vec::new()
@@ -210,12 +216,12 @@ impl CephPrimitive for CephMsgConnect{
     }
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
-        try!(buffer.write_u64::<LittleEndian>(self.features));
+        try!(buffer.write_u64::<LittleEndian>(self.features.bits));
         try!(buffer.write_u32::<LittleEndian>(self.host_type.clone() as u32));
         try!(buffer.write_u32::<LittleEndian>(self.global_seq));
         try!(buffer.write_u32::<LittleEndian>(self.connect_seq));
         try!(buffer.write_u32::<LittleEndian>(self.protocol_version));
-        try!(buffer.write_u32::<LittleEndian>(self.authorizer_protocol));
+        try!(buffer.write_u32::<LittleEndian>(self.authorizer_protocol.clone() as u32));
         try!(buffer.write_u32::<LittleEndian>(self.authorizer_len));
         try!(buffer.write_u8(self.flags));
 
@@ -226,7 +232,7 @@ impl CephPrimitive for CephMsgConnect{
 #[derive(Debug)]
 struct CephMsgConnectReply{
     tag: CephMsg,
-    features: u64,
+    features: CephFeatures,
     global_seq: u32,
     connect_seq: u32,
     protocol_version: u32,
@@ -238,8 +244,11 @@ struct CephMsgConnectReply{
 impl CephPrimitive for CephMsgConnectReply{
 	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
         let tag = try!(cursor.read_u8());
-        println!("CephMsgReply tag: {}", tag);
-        let features = try!(cursor.read_u64::<LittleEndian>());
+        println!("CephConnectMsgReply tag: {}", tag);
+
+        let feature_bits = try!(cursor.read_u64::<LittleEndian>());
+        println!("Feature_bits: {:x}", feature_bits);
+
         let global_seq = try!(cursor.read_u32::<LittleEndian>());
         let connect_seq = try!(cursor.read_u32::<LittleEndian>());
         let protocol_version = try!(cursor.read_u32::<LittleEndian>());
@@ -249,7 +258,7 @@ impl CephPrimitive for CephMsgConnectReply{
 
         return Ok(CephMsgConnectReply{
             tag: CephMsg::from_u8(1).unwrap(), //TODO Eliminate this
-            features: features,
+            features: CephFeatures::from_bits(feature_bits).unwrap(),
             global_seq: global_seq,
             connect_seq: connect_seq,
             protocol_version: protocol_version,
@@ -259,10 +268,11 @@ impl CephPrimitive for CephMsgConnectReply{
         });
 
     }
+
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
         try!(buffer.write_u8(self.tag.clone() as u8));
-        try!(buffer.write_u64::<LittleEndian>(self.features));
+        try!(buffer.write_u64::<LittleEndian>(self.features.bits));
         try!(buffer.write_u32::<LittleEndian>(self.global_seq));
         try!(buffer.write_u32::<LittleEndian>(self.connect_seq));
         try!(buffer.write_u32::<LittleEndian>(self.protocol_version));
@@ -290,7 +300,7 @@ enum CephEntity{
     Mds=2,
     Osd=4,
     Client=8,
-    Auth=20,
+    Auth=20, //Used to setup a new CephX connection
     Any=255
 }
 }
@@ -440,6 +450,7 @@ bitflags!{
 }
 
 enum_from_primitive!{
+#[repr(u32)]
 #[derive(Debug, Clone)]
 enum CephAuthProtocol{
     CephAuthUnknown = 0,
@@ -562,9 +573,9 @@ struct CephEntityName{
     num: u64,
 }
 
-struct Utime {
-    tv_sec: u32,  // Seconds since epoch.
-    tv_nsec: u32, // Nanoseconds since the last second.
+pub struct Utime {
+    pub tv_sec: u32,  // Seconds since epoch.
+    pub tv_nsec: u32, // Nanoseconds since the last second.
 }
 
 // From src/include/msgr.h
@@ -805,6 +816,7 @@ impl CephPrimitive for CephMsgKeepAlive2Ack{
     }
 }
 
+#[derive(Debug)]
 struct EntityAddr{
     port: u16,
     nonce: u32,
@@ -812,110 +824,108 @@ struct EntityAddr{
     v6addr: Option<Ipv6Addr>,
 }
 
-fn encode_entity_addr(addr: EntityAddr) -> Result<Vec<u8>, SerialError>{
-    //socket_type
-    let mut buffer:Vec<u8> = Vec::new();
-    try!(buffer.write_u32::<LittleEndian>(0)); //TODO: Lookup what this should be
-    try!(buffer.write_u32::<LittleEndian>(addr.nonce));
-
-    if addr.v4addr.is_some(){
-        //Address Family
-        try!(buffer.write_u32::<LittleEndian>(0x0002));
-
-        //Port
-        try!(buffer.write_u16::<BigEndian>(addr.port));
-        let tmp = addr.v4addr.unwrap();//TODO eliminate this
-        for octet in tmp.octets().iter(){
-            try!(buffer.write_u8(*octet));
+impl CephPrimitive for EntityAddr{
+    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        //type
+        let addr_type = try!(cursor.read_u32::<LittleEndian>());
+        let nonce = try!(cursor.read_u32::<LittleEndian>());
+        //type-str
+        let address_family = try!(cursor.read_u16::<BigEndian>());
+        match address_family{
+            0x0002 => {
+                let port = try!(cursor.read_u16::<BigEndian>());
+                let a = try!(cursor.read_u8());
+                let b = try!(cursor.read_u8());
+                let c = try!(cursor.read_u8());
+                let d = try!(cursor.read_u8());
+                let ip = Ipv4Addr::new(a,b,c,d);
+                return Ok(
+                    EntityAddr{
+                        port: port,
+                        nonce: nonce,
+                        v4addr: Some(ip),
+                        v6addr:None,
+                    }
+                );
+            },
+            0x000A =>{
+                //TODO: Test this
+                println!("IPv6 Addr");
+                let port = try!(cursor.read_u16::<BigEndian>());
+                println!("Port {}", port);
+                let a = try!(cursor.read_u16::<BigEndian>());
+                let b = try!(cursor.read_u16::<BigEndian>());
+                let c = try!(cursor.read_u16::<BigEndian>());
+                let d = try!(cursor.read_u16::<BigEndian>());
+                let e = try!(cursor.read_u16::<BigEndian>());
+                let f = try!(cursor.read_u16::<BigEndian>());
+                let g = try!(cursor.read_u16::<BigEndian>());
+                let h = try!(cursor.read_u16::<BigEndian>());
+                let ip = Ipv6Addr::new(a,b,c,d,e,f,g,h);
+                println!("IPv6 Addr_string: {}", ip);
+                return Ok(
+                    EntityAddr{
+                        port: port,
+                        nonce: nonce,
+                        v4addr: None,
+                        v6addr: Some(ip),
+                    }
+                );
+            },
+            _ => {
+                println!("Unknown addr type");
+                return Err(
+                    SerialError::new(format!("unknown ip address family: {}", address_family))
+                );
+            }
         }
-    }else if addr.v6addr.is_some(){
-        //Address Family
-        try!(buffer.write_u32::<LittleEndian>(0x000A));
-
-        //Port
-        try!(buffer.write_u16::<BigEndian>(addr.port));
-
-        let tmp = addr.v6addr.unwrap();//TODO eliminate this
-        for octet in tmp.segments().iter(){
-            try!(buffer.write_u16::<BigEndian>(*octet));
-        }
-    }else{
-        //Unknown
-        return Err(
-            SerialError::new("EntityAddr needs a v4addr or v6addr.  Missing both".to_string())
-        );
     }
-    return Ok(buffer);
-}
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        //socket_type
+        let mut buffer:Vec<u8> = Vec::new();
 
-fn decode_entity_addr<R: Read>(cursor: &mut R)->Result<EntityAddr, SerialError>{
-    //type
-    let addr_type = try!(cursor.read_u32::<LittleEndian>());
-    println!("Type: {}", addr_type);
-    let nonce = try!(cursor.read_u32::<LittleEndian>());
-    println!("Nonce: {}", nonce);
-    //type-str
-    let address_family = try!(cursor.read_u16::<BigEndian>());
-    println!("Address_family: {}", address_family);
-    match address_family{
-        0x0002 => {
-            println!("IPv4 Addr");
-            let port = try!(cursor.read_u16::<BigEndian>());
-            println!("Port {}", port);
-            let a = try!(cursor.read_u8());
-            let b = try!(cursor.read_u8());
-            let c = try!(cursor.read_u8());
-            let d = try!(cursor.read_u8());
-            let ip = Ipv4Addr::new(a,b,c,d);
-            println!("IPv4 Addr_string: {}", ip);
-            return Ok(
-                EntityAddr{
-                    port: port,
-                    nonce: nonce,
-                    v4addr: Some(ip),
-                    v6addr:None,
-                }
-            );
-        },
-        0x000A =>{
-            //TODO: Test this
-            println!("IPv6 Addr");
-            let port = try!(cursor.read_u16::<BigEndian>());
-            println!("Port {}", port);
-            let a = try!(cursor.read_u16::<BigEndian>());
-            let b = try!(cursor.read_u16::<BigEndian>());
-            let c = try!(cursor.read_u16::<BigEndian>());
-            let d = try!(cursor.read_u16::<BigEndian>());
-            let e = try!(cursor.read_u16::<BigEndian>());
-            let f = try!(cursor.read_u16::<BigEndian>());
-            let g = try!(cursor.read_u16::<BigEndian>());
-            let h = try!(cursor.read_u16::<BigEndian>());
-            let ip = Ipv6Addr::new(a,b,c,d,e,f,g,h);
-            println!("IPv6 Addr_string: {}", ip);
-            return Ok(
-                EntityAddr{
-                    port: port,
-                    nonce: nonce,
-                    v4addr: None,
-                    v6addr: Some(ip),
-                }
-            );
-        },
-        _ => {
-            println!("Unknown addr type");
+        try!(buffer.write_u32::<LittleEndian>(0)); //Is this right?
+        try!(buffer.write_u32::<LittleEndian>(self.nonce));
+
+        if self.v4addr.is_some(){
+            //Address Family
+            try!(buffer.write_u16::<BigEndian>(0x0002));
+            //Port
+            try!(buffer.write_u16::<BigEndian>(self.port));
+            let tmp = self.v4addr.unwrap();//TODO eliminate this
+            for octet in tmp.octets().iter(){
+                try!(buffer.write_u8(*octet));
+            }
+            //Sockaddr_storage seems to be a 128 byte structure and
+            //the ceph client is sending 120 bytes of 0's or padding
+            for _ in 0..120{
+                try!(buffer.write_u8(0));
+            }
+        }else if self.v6addr.is_some(){
+            //Address Family
+            try!(buffer.write_u32::<LittleEndian>(0x000A));
+
+            //Port
+            try!(buffer.write_u16::<BigEndian>(self.port));
+
+            let tmp = self.v6addr.unwrap();//TODO eliminate this
+            for octet in tmp.segments().iter(){
+                try!(buffer.write_u16::<BigEndian>(*octet));
+            }
+        }else{
+            //Unknown
             return Err(
-                SerialError::new(format!("unknown ip address family: {}", address_family))
+                SerialError::new("EntityAddr needs a v4addr or v6addr.  Missing both".to_string())
             );
         }
+        return Ok(buffer);
     }
 }
-
 /*
 struct ceph_list<T> {
         u32le length;
         T     elements[length];
 }
- */
 impl <T>CephPrimitive for Vec<T>{
 	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
         return Ok(Vec::new())
@@ -924,6 +934,7 @@ impl <T>CephPrimitive for Vec<T>{
         return Ok(Vec::new());
     }
 }
+*/
 
 //Connect to Ceph Monitor and send a hello banner
 fn send_banner(socket: &mut TcpStream)->Result<(), SerialError>{

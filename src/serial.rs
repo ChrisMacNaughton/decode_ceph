@@ -26,6 +26,8 @@ mod tests{
     use std::io::prelude::*;
     use std::net::{Ipv4Addr,TcpStream};
     use super::CephPrimitive;
+    use crypto;
+
     //Replay captured data and test results
     #[test]
     fn test_connect(){
@@ -53,13 +55,13 @@ mod tests{
         //send sock_addr_storage
         let client_sock_addr_bytes = client_info.write_to_wire().unwrap();
         let mut bytes_written = stream.write(&client_sock_addr_bytes).unwrap();
-        println!("Wrote {} bytes back to Ceph", bytes_written);
+        println!("Wrote {} sock_addr bytes back to Ceph", bytes_written);
 
         //Get server sockaddr_storage
         buf = Vec::new();
         (&mut stream).take(136).read_to_end(&mut buf).unwrap();
         let mut server_sockaddr_cursor = Cursor::new(&mut buf[..]);
-        println!("Decoding Ceph server sockaddr_storage bytes {:?}", server_sockaddr_cursor);
+        //println!("Decoding Ceph server sockaddr_storage bytes {:?}", server_sockaddr_cursor);
         let server_entity_addr = super::EntityAddr::read_from_wire(&mut server_sockaddr_cursor).unwrap();
         println!("Server entity_addr: {:?}", server_entity_addr);
 
@@ -74,24 +76,25 @@ mod tests{
          994     connect.authorizer_len = authorizer ? authorizer->bl.length() : 0;
          */
         let connect = super::CephMsgConnect{
-            features: super::CEPH_ALL,
+            features: super::CEPH_ALL, //Wireshark is showing not all bits are set
             host_type: super::CephEntity::Client,
             global_seq: 1,
             connect_seq: 0,
-            protocol_version: 15,
-            authorizer_protocol: super::CephAuthProtocol::CephAuthNone,
+            protocol_version: super::Protocol::MonProtocol,
+            authorizer_protocol: super::CephAuthProtocol::CephAuthUnknown,
             authorizer_len: 0,
             flags: 0,
             authorizer: Vec::new(),
         };
         let connect_bytes = connect.write_to_wire().unwrap();
-        println!("Writing CephConnectMsg to Ceph {:?}", &connect_bytes);
+        println!("Writing CephMsgConnect to Ceph {:?}", &connect_bytes);
         bytes_written = stream.write(&connect_bytes).unwrap();
-        println!("Wrote {} bytes", bytes_written);
+        println!("Wrote {} CephMsgConnect bytes", bytes_written);
 
         //Get the connection reply
         let mut reply_buffer = Vec::new();
-        (&mut stream).take(136).read_to_end(&mut reply_buffer).unwrap();
+        //(&mut stream).take(136).read_to_end(&mut reply_buffer).unwrap();
+        (&mut stream).take(26).read_to_end(&mut reply_buffer).unwrap();
         println!("Reponse bytes: {:?}", &reply_buffer);
 
         //Decode it
@@ -100,6 +103,11 @@ mod tests{
         println!("CephMsgConnectReply: {:?}", ceph_msg_reply);
 
         //I think I need to setup the authorizer stuff now and negotiate a cephx connection
+        //let auth_client_ticket = crypto::AuthTicket::new(600.0);
+        //let auth_ticket_bytes = auth_client_ticket.write_to_wire().unwrap();
+
+        //bytes_written = stream.write(&auth_ticket_bytes).unwrap();
+        //println!("Wrote {} auth ticket bytes", bytes_written);
 
         //recv this:
         //Decode header
@@ -172,7 +180,7 @@ impl From<io::Error> for SerialError {
     }
 }
 
-trait CephPrimitive {
+pub trait CephPrimitive {
 	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>;
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>;
 }
@@ -183,7 +191,7 @@ struct CephMsgConnect{
     host_type: CephEntity, //u32
     global_seq: u32,
     connect_seq: u32,
-    protocol_version: u32,
+    protocol_version: Protocol,
     authorizer_protocol: CephAuthProtocol,
     authorizer_len: u32,
     flags: u8,
@@ -207,7 +215,7 @@ impl CephPrimitive for CephMsgConnect{
             host_type: CephEntity::from_u32(host_type).unwrap(),
             global_seq: global_seq,
             connect_seq: connect_seq,
-            protocol_version: protocol_version,
+            protocol_version: Protocol::from_u32(protocol_version).unwrap(),
             authorizer_protocol: CephAuthProtocol::from_u32(authorizer_protocol).unwrap(),
             authorizer_len: authorizer_len,
             flags: flags,
@@ -220,7 +228,7 @@ impl CephPrimitive for CephMsgConnect{
         try!(buffer.write_u32::<LittleEndian>(self.host_type.clone() as u32));
         try!(buffer.write_u32::<LittleEndian>(self.global_seq));
         try!(buffer.write_u32::<LittleEndian>(self.connect_seq));
-        try!(buffer.write_u32::<LittleEndian>(self.protocol_version));
+        try!(buffer.write_u32::<LittleEndian>(self.protocol_version.clone() as u32));
         try!(buffer.write_u32::<LittleEndian>(self.authorizer_protocol.clone() as u32));
         try!(buffer.write_u32::<LittleEndian>(self.authorizer_len));
         try!(buffer.write_u8(self.flags));
@@ -235,7 +243,7 @@ struct CephMsgConnectReply{
     features: CephFeatures,
     global_seq: u32,
     connect_seq: u32,
-    protocol_version: u32,
+    protocol_version: Protocol,
     authorizer_len: u32,
     flags: u8,
     authorizer: Vec<u8>,
@@ -252,16 +260,18 @@ impl CephPrimitive for CephMsgConnectReply{
         let global_seq = try!(cursor.read_u32::<LittleEndian>());
         let connect_seq = try!(cursor.read_u32::<LittleEndian>());
         let protocol_version = try!(cursor.read_u32::<LittleEndian>());
+        println!("Protocol version: {:x}", protocol_version);
+
         let authorizer_len = try!(cursor.read_u32::<LittleEndian>());
         let flags = try!(cursor.read_u8());
         let authorizer = Vec::new();
 
         return Ok(CephMsgConnectReply{
-            tag: CephMsg::from_u8(1).unwrap(), //TODO Eliminate this
+            tag: CephMsg::from_u8(tag).unwrap(),
             features: CephFeatures::from_bits(feature_bits).unwrap(),
             global_seq: global_seq,
             connect_seq: connect_seq,
-            protocol_version: protocol_version,
+            protocol_version: Protocol::from_u32(protocol_version).unwrap(),
             authorizer_len: authorizer_len,
             flags: flags,
             authorizer: authorizer
@@ -275,7 +285,7 @@ impl CephPrimitive for CephMsgConnectReply{
         try!(buffer.write_u64::<LittleEndian>(self.features.bits));
         try!(buffer.write_u32::<LittleEndian>(self.global_seq));
         try!(buffer.write_u32::<LittleEndian>(self.connect_seq));
-        try!(buffer.write_u32::<LittleEndian>(self.protocol_version));
+        try!(buffer.write_u32::<LittleEndian>(self.protocol_version.clone() as u32));
         try!(buffer.write_u32::<LittleEndian>(self.authorizer_len));
         try!(buffer.write_u8(self.flags));
         for b in &self.authorizer{
@@ -295,7 +305,7 @@ struct CephMsgrMsg {
 enum_from_primitive!{
 #[repr(u32)]
 #[derive(Debug, Clone)]
-enum CephEntity{
+pub enum CephEntity{
     Mon=1,
     Mds=2,
     Osd=4,
@@ -311,11 +321,14 @@ enum Crypto {
     Aes = 1,
 }
 
+enum_from_primitive!{
+#[repr(u32)]
 #[derive(Debug, Clone)]
 enum Protocol{
     OsdProtocol = 24, /*server/client*/
     MdsProtocol = 32, /*server/client*/
     MonProtocol = 15, /*server/client*/
+}
 }
 
 bitflags!{
@@ -383,6 +396,47 @@ bitflags!{
     	const CEPH_FEATURE_RESERVED2 = 1u64 << 61,
     	const CEPH_FEATURE_RESERVED = 1u64 << 62,
     	const CEPH_FEATURE_RESERVED_BROKEN = 1u64 << 63,
+        const CEPH_CLIENT_DEFAULT =  CEPH_FEATURE_UID.bits
+            | CEPH_FEATURE_NOSRCADDR.bits
+            | CEPH_FEATURE_MONCLOCKCHECK.bits
+            | CEPH_FEATURE_FLOCK.bits
+            | CEPH_FEATURE_SUBSCRIBE2.bits
+            | CEPH_FEATURE_MONNAME.bits
+            | CEPH_FEATURE_RECONNECT_SEQ.bits
+            | CEPH_FEATURE_DIRLAYOUTHASH.bits
+            | CEPH_FEATURE_OBJECTLOCATOR.bits
+            | CEPH_FEATURE_PGID64.bits
+            | CEPH_FEATURE_INCSUBOSDMAP.bits
+            | CEPH_FEATURE_PGPOOL3.bits
+            | CEPH_FEATURE_OSDREPLYMUX.bits
+            | CEPH_FEATURE_OSDENC.bits
+            | CEPH_FEATURE_OMAP.bits
+            | CEPH_FEATURE_QUERY_T.bits
+            | CEPH_FEATURE_MONENC.bits
+            | CEPH_FEATURE_INDEP_PG_MAP.bits
+            | CEPH_FEATURE_CRUSH_TUNABLES.bits
+            | CEPH_FEATURE_CHUNKY_SCRUB.bits
+            | CEPH_FEATURE_MON_NULLROUTE.bits
+            | CEPH_FEATURE_MON_GV.bits
+            | CEPH_FEATURE_BACKFILL_RESERVATION.bits
+            | CEPH_FEATURE_MSG_AUTH.bits
+            | CEPH_FEATURE_RECOVERY_RESERVATION.bits
+            | CEPH_FEATURE_CRUSH_TUNABLES1.bits
+            | CEPH_FEATURE_CREATEPOOLID.bits
+            | CEPH_FEATURE_REPLY_CREATE_INODE.bits
+            | CEPH_FEATURE_OSD_HBMSGS.bits
+            | CEPH_FEATURE_MDSENC.bits
+            | CEPH_FEATURE_OSDHASHPSPOOL.bits
+            | CEPH_FEATURE_MON_SINGLE_PAXOS.bits
+            | CEPH_FEATURE_OSD_SNAPMAPPER.bits
+            | CEPH_FEATURE_MON_SCRUB.bits
+            | CEPH_FEATURE_OSD_PACKED_RECOVERY.bits
+            | CEPH_FEATURE_OSD_CACHEPOOL.bits
+            | CEPH_FEATURE_CRUSH_V2.bits
+            | CEPH_FEATURE_EXPORT_PEER.bits
+            | CEPH_FEATURE_OSD_ERASURE_CODES.bits
+            | CEPH_FEATURE_OSDMAP_ENC.bits
+
         const CEPH_ALL = CEPH_FEATURE_UID.bits
             | CEPH_FEATURE_NOSRCADDR.bits
             | CEPH_FEATURE_MONCLOCKCHECK.bits
@@ -442,10 +496,7 @@ bitflags!{
             | CEPH_FEATURE_OSD_BITWISE_HOBJ_SORT.bits
             | CEPH_FEATURE_ERASURE_CODE_PLUGINS_V3.bits
             | CEPH_FEATURE_OSD_PROXY_WRITE_FEATURES.bits
-            | CEPH_FEATURE_OSD_HITSET_GMT.bits
-            | CEPH_FEATURE_RESERVED2.bits
-            | CEPH_FEATURE_RESERVED.bits
-            | CEPH_FEATURE_RESERVED_BROKEN.bits,
+            | CEPH_FEATURE_OSD_HITSET_GMT.bits,
     }
 }
 
@@ -568,9 +619,9 @@ enum CephMsgType{
 }
 
 #[derive(Debug)]
-struct CephEntityName{
-    entity_type: CephEntity,
-    num: u64,
+pub struct CephEntityName{
+    pub entity_type: CephEntity,
+    pub num: u64,
 }
 
 pub struct Utime {

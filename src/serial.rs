@@ -1,12 +1,16 @@
-extern crate byteorder;
 use crypto;
 
+extern crate byteorder;
+extern crate crc;
+extern crate num;
 extern crate time;
 
-extern crate num;
+//Crates
+use self::byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
+use self::crc::{crc32, Hasher32};
 use self::num::FromPrimitive;
 
-use self::byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
+//Std libs
 use std::io;
 use std::io::{ErrorKind};
 use std::io::prelude::*;
@@ -105,49 +109,15 @@ mod tests{
         println!("Writing KeepAlive2 to Ceph {:?}", &keep_alive_bytes);
         bytes_written = stream.write(&keep_alive_bytes).unwrap();
         println!("Wrote {} KeepAlive2 bytes", bytes_written);
+
         //I think I need to setup the authorizer stuff now and negotiate a cephx connection
-        //let auth_client_ticket = crypto::AuthTicket::new(600.0);
-        //let auth_ticket_bytes = auth_client_ticket.write_to_wire().unwrap();
+        let auth_client_ticket = crypto::AuthTicket::new(600.0);
+        let auth_ticket_bytes = auth_client_ticket.write_to_wire().unwrap();
 
-        //bytes_written = stream.write(&auth_ticket_bytes).unwrap();
-        //println!("Wrote {} auth ticket bytes", bytes_written);
-
-        //recv this:
-        //Decode header
-        //Decode footer
-        //front_crc
-        //middle_crc
-        //data_crc
-        //flags
-        /*
-        let mut ceph_response_bytes = vec![
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x02,0x1a,0x85,0x0a,0x00,0x03,0xd8,0x00, //17
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, //34
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, //51
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, //68
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, //85
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, //102
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x02,0x88,0x50,0x0a,0x00,0x03,0x90,0x00,
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
-        ];
-        let mut cursor = Cursor::new(&mut ceph_response_bytes[..]);
-        super::decode_entity_addr(&mut cursor);
-        let connect_msg = super::CephMsgConnect::read_from_wire(&mut cursor);
-        println!("Connect msg: {:?}", connect_msg);
-        println!("Cursor position: {}", cursor.position());
-        let msg_header = super::CephMsgHeader::read_from_wire(&mut cursor);
-        println!("Msg header: {:?}", msg_header);
-        println!("Cursor position: {}", cursor.position());
-        */
+        bytes_written = stream.write(&auth_ticket_bytes).unwrap();
+        println!("Wrote {} auth ticket bytes", bytes_written);
     }
+
     #[test]
     fn test_connect_reply(){
 
@@ -303,6 +273,49 @@ struct CephMsgrMsg {
     tag: CephMsg,//    u8 tag = 0x07;
     header: CephMsgHeader,
     footer: CephMsgFooter,
+}
+
+impl CephMsgrMsg{
+    fn new(header: CephMsgHeader, footer: CephMsgFooter)->CephMsgrMsg{
+        return CephMsgrMsg{
+            tag: CephMsg::Msg,
+            header: header,
+            footer: footer,
+        }
+    }
+}
+
+impl CephPrimitive for CephMsgrMsg{
+	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let tag_bits = try!(cursor.read_u8());
+        let tag = CephMsg::from_u8(tag_bits).unwrap();
+        let header = try!(CephMsgHeader::read_from_wire(cursor));
+        let footer = try!(CephMsgFooter::read_from_wire(cursor));
+
+        return Ok(CephMsgrMsg{
+            tag: tag,
+            header: header,
+            footer: footer,
+        });
+    }
+
+    fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer: Vec<u8> = Vec::new();
+        try!(buffer.write_u8(self.tag.clone() as u8));
+
+        let header_bits = try!(self.header.write_to_wire());
+        for b in header_bits{
+            try!(buffer.write_u8(b.clone()));
+        }
+
+        let footer_bits = try!(self.footer.write_to_wire());
+
+        for b in footer_bits{
+            try!(buffer.write_u8(b.clone()));
+        }
+
+        return Ok(buffer);
+    }
 }
 
 enum_from_primitive!{
@@ -520,7 +533,7 @@ enum CephAuthProtocol{
 
 enum_from_primitive!{
 #[derive(Debug, Clone)]
-enum CephPriority{
+pub enum CephPriority{
     Low = 64,
     Default = 127,
     High = 196,
@@ -638,18 +651,18 @@ pub struct Utime {
 
 // From src/include/msgr.h
 #[derive(Debug)]
-struct CephMsgHeader {
-    sequence_num: u64,
-    transaction_id: u64,
-    msg_type: u16,  //CEPH_MSG_* or MSG_*
-    priority: CephPriority,
-    version: u16,   //version of message encoding
-    front_len: u32, // The size of the front section
-    middle_len: u32,// The size of the middle section
-    data_len: u32,  // The size of the data section
-    data_off: u16,  // The way data should be aligned by the reciever
-    entity_name: CephEntityName, // Information about the sender
-    compat_version: u16, // Oldest compatible encoding version
+pub struct CephMsgHeader {
+    pub sequence_num: u64,
+    pub transaction_id: u64,
+    pub msg_type: u16,  //CEPH_MSG_* or MSG_*
+    pub priority: CephPriority,
+    pub version: u16,   //version of message encoding
+    pub front_len: u32, // The size of the front section
+    pub middle_len: u32,// The size of the middle section
+    pub data_len: u32,  // The size of the data section
+    pub data_off: u16,  // The way data should be aligned by the reciever
+    pub entity_name: CephEntityName, // Information about the sender
+    pub compat_version: u16, // Oldest compatible encoding version
     reserved: u16, // Unused
     crc: u32,  // CRC of header
 }
@@ -700,6 +713,8 @@ impl CephPrimitive for CephMsgHeader{
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut digest = crc32::Digest::new(crc32::IEEE);
+
         let mut buffer:Vec<u8> = Vec::new();
         try!(buffer.write_u64::<LittleEndian>(self.sequence_num));
         try!(buffer.write_u64::<LittleEndian>(self.transaction_id));
@@ -716,8 +731,12 @@ impl CephPrimitive for CephMsgHeader{
 
         try!(buffer.write_u16::<LittleEndian>(self.compat_version));
         try!(buffer.write_u16::<LittleEndian>(self.reserved));
-        try!(buffer.write_u32::<LittleEndian>(self.crc));
 
+        //Create a CRC32 of this buffers contents
+        for b in &buffer{
+            digest.write(&[*b]);
+        }
+        try!(buffer.write_u32::<LittleEndian>(digest.sum32()));
         return Ok(buffer);
     }
 }
@@ -878,15 +897,15 @@ struct CephMsgKeepAlive2Ack{
     timestamp: Utime,
 }
 
-impl CephMsgKeepAlive2 {
-    fn new() -> CephMsgKeepAlive2{
+impl CephMsgKeepAlive2Ack {
+    fn new() -> CephMsgKeepAlive2Ack{
         let now: time::Timespec = time::now().to_timespec();
         let timestamp = Utime{
             tv_sec: now.sec as u32,
             tv_nsec: now.nsec as u32,
         };
 
-        return CephMsgKeepAlive2{
+        return CephMsgKeepAlive2Ack{
             tag: CephMsg::KeepAlive2Ack,
             timestamp: timestamp,
         };

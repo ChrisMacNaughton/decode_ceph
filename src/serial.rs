@@ -1,6 +1,8 @@
 extern crate byteorder;
 use crypto;
 
+extern crate time;
+
 extern crate num;
 use self::num::FromPrimitive;
 
@@ -36,7 +38,6 @@ mod tests{
         let mut stream = TcpStream::connect("10.0.3.144:6789").unwrap();
         let mut buf: Vec<u8> = Vec::new();
         //recv banner
-        //(&mut stream).take(9).read_to_end(&mut buf).unwrap();
         (&mut stream).take(9).read_to_end(&mut buf).unwrap();
         println!("Banner received: {}", String::from_utf8(buf).unwrap()); //we're on a roll :D
 
@@ -62,20 +63,9 @@ mod tests{
         buf = Vec::new();
         (&mut stream).take(136).read_to_end(&mut buf).unwrap();
         let mut server_sockaddr_cursor = Cursor::new(&mut buf[..]);
-        //println!("Decoding Ceph server sockaddr_storage bytes {:?}", server_sockaddr_cursor);
         let server_entity_addr = super::EntityAddr::read_from_wire(&mut server_sockaddr_cursor).unwrap();
         println!("Server entity_addr: {:?}", server_entity_addr);
 
-        /*
-         987     ceph_msg_connect connect;
-         988     connect.features = policy.features_supported;
-         989     connect.host_type = msgr->get_myinst().name.type();
-         990     connect.global_seq = gseq;
-         991     connect.connect_seq = cseq;
-         992     connect.protocol_version = msgr->get_proto_version(peer_type, true);
-         993     connect.authorizer_protocol = authorizer ? authorizer->protocol : 0;
-         994     connect.authorizer_len = authorizer ? authorizer->bl.length() : 0;
-         */
         let connect = super::CephMsgConnect{
             features: super::CEPH_CLIENT_DEFAULT, //Wireshark is showing not all bits are set
             host_type: super::CephEntity::Client,
@@ -107,6 +97,14 @@ mod tests{
         let ceph_msg_reply = super::CephMsgConnectReply::read_from_wire(&mut ceph_msg_reply_cursor);
         println!("CephMsgConnectReply: {:?}", ceph_msg_reply);
 
+        //Create a KeepAlive2
+        let keep_alive = super::CephMsgKeepAlive2::new();
+        let keep_alive_bytes = keep_alive.write_to_wire().unwrap();
+
+        //Send it
+        println!("Writing KeepAlive2 to Ceph {:?}", &keep_alive_bytes);
+        bytes_written = stream.write(&keep_alive_bytes).unwrap();
+        println!("Wrote {} KeepAlive2 bytes", bytes_written);
         //I think I need to setup the authorizer stuff now and negotiate a cephx connection
         //let auth_client_ticket = crypto::AuthTicket::new(600.0);
         //let auth_ticket_bytes = auth_client_ticket.write_to_wire().unwrap();
@@ -769,6 +767,14 @@ struct CephMsgTagAck{
     tag: CephMsg, //0x08
     seq: u64 //Sequence number of msg being acknowledged
 }
+impl CephMsgTagAck{
+    fn new(sequence_number: u64) -> CephMsgTagAck{
+        return CephMsgTagAck{
+            tag: CephMsg::Ack,
+            seq: sequence_number,
+        };
+    }
+}
 
 impl CephPrimitive for CephMsgTagAck{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
@@ -794,6 +800,15 @@ struct CephMsgKeepAlive{
     data: u8, // No data
 }
 
+impl CephMsgKeepAlive{
+    fn new() -> CephMsgKeepAlive{
+        return CephMsgKeepAlive{
+            tag: CephMsg::KeepAlive,
+            data: 0,
+        }
+    }
+}
+
 impl CephPrimitive for CephMsgKeepAlive{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
         let tag = try!(cursor.read_u8());
@@ -816,6 +831,20 @@ impl CephPrimitive for CephMsgKeepAlive{
 struct CephMsgKeepAlive2{
     tag: CephMsg, //0x0E
     timestamp: Utime,
+}
+
+impl CephMsgKeepAlive2{
+    fn new() -> CephMsgKeepAlive2{
+        let now: time::Timespec = time::now().to_timespec();
+        let timestamp = Utime{
+            tv_sec: now.sec as u32,
+            tv_nsec: now.nsec as u32,
+        };
+        return CephMsgKeepAlive2{
+            tag: CephMsg::KeepAlive2,
+            timestamp:timestamp,
+        }
+    }
 }
 
 impl CephPrimitive for CephMsgKeepAlive2{
@@ -847,6 +876,21 @@ impl CephPrimitive for CephMsgKeepAlive2{
 struct CephMsgKeepAlive2Ack{
     tag: CephMsg, //0x0F
     timestamp: Utime,
+}
+
+impl CephMsgKeepAlive2 {
+    fn new() -> CephMsgKeepAlive2{
+        let now: time::Timespec = time::now().to_timespec();
+        let timestamp = Utime{
+            tv_sec: now.sec as u32,
+            tv_nsec: now.nsec as u32,
+        };
+
+        return CephMsgKeepAlive2{
+            tag: CephMsg::KeepAlive2Ack,
+            timestamp: timestamp,
+        };
+    }
 }
 
 impl CephPrimitive for CephMsgKeepAlive2Ack{

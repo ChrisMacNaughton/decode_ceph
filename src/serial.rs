@@ -282,11 +282,9 @@ impl CephMsgrMsg{
 
 impl CephPrimitive for CephMsgrMsg{
 	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        //let tag_bits = try!(cursor.read_u8());
-        //let tag = CephMsg::from_u8(tag_bits).unwrap();
         let header = try!(CephMsgHeader::read_from_wire(cursor));
         //CephMsg is sandwhiched between these two fields
-        let msg = Message::Class;
+        let msg = try!(read_message_from_wire(cursor, &header.msg_type));
         let footer = try!(CephMsgFooter::read_from_wire(cursor));
 
         return Ok(CephMsgrMsg{
@@ -306,7 +304,7 @@ impl CephPrimitive for CephMsgrMsg{
             try!(buffer.write_u8(b.clone()));
         }
 
-        //Encode msg
+        //Encode Message
 
         let footer_bits = try!(self.footer.write_to_wire());
 
@@ -639,22 +637,79 @@ pub enum Message{
     Nop,
 }
 
-impl CephPrimitive for Message{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        return Ok(Message::Nop);
+/*
+    This is ugly.  I have no way to pass the msg_type to the trait so unfortunately I can't do a
+    CephPrimitive impl for this Message encoding :'(
+ */
+fn read_message_from_wire<R: Read>(cursor: &mut R, msg_type: &CephMsgType) -> Result<Message, SerialError>{
+    //This needs to decode the tag as well as the Message
+    match msg_type{
+        &CephMsgType::MsgOsdOp => {
+            let client = try!(cursor.read_u32::<LittleEndian>());
+            let map_epoch = try!(cursor.read_u32::<LittleEndian>());
+            let flag_bits = try!(cursor.read_u32::<LittleEndian>());
+            let flags = OsdOp::from_bits(flag_bits).unwrap();
+            let utime = try!(Utime::read_from_wire(cursor));
+            let reassert_version = try!(cursor.read_u64::<LittleEndian>());
+            let reassert_epoch = try!(cursor.read_u32::<LittleEndian>());
+            let object_locator = try!(ObjectLocator::read_from_wire(cursor));
+            let pg = try!(PlacementGroup::read_from_wire(cursor));
+            let object_id = try!(ObjectId::read_from_wire(cursor));
+            let op_count = try!(cursor.read_u16::<LittleEndian>());
+            let op = try!(Operation::read_from_wire(cursor));
+
+            let snapshot_id = try!(cursor.read_u64::<LittleEndian>());
+            let snapshot_seq = try!(cursor.read_u64::<LittleEndian>());
+            let snapshot_count = try!(cursor.read_u32::<LittleEndian>());
+            let retry_attempt = try!(cursor.read_u32::<LittleEndian>());
+
+            let mut payload_buffer:Vec<u8> = Vec::new();
+
+            for _ in 0..op.payload_size{
+                let b = try!(cursor.read_u8());
+                payload_buffer.push(b);
+            }
+
+            let osd_operation = CephOsdOperation{
+                client: client,
+                map_epoch: map_epoch,
+                flags: flags,
+                modification_time: utime,
+                reassert_version: reassert_version,
+                reassert_epoch: reassert_epoch,
+                locator: object_locator,
+                placement_group: pg,
+                object_id: object_id,
+                operation_count: op_count,
+                operation: op,
+                snapshot_id: snapshot_id,
+                snapshot_seq: snapshot_seq,
+                snapshot_count: snapshot_count,
+                retry_attempt: retry_attempt,
+                payload: payload_buffer,
+            };
+            return Ok(Message::OsdOp(osd_operation));
+        },
+        &CephMsgType::MsgOsdOpReply => {
+            return Ok(Message::Nop)
+        },
+        _ => {
+            return Ok(Message::Nop)
+        },
     }
+}
 
-    fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-        let buffer:Vec<u8> = Vec::new();
+//TODO: Note this function is going to get massive.  Figure out a way to shrink it
+fn write_message_to_wire(msg: Message) -> Result<Vec<u8>, SerialError>{
+    let buffer:Vec<u8> = Vec::new();
 
-        match self{
-            &Message::OsdOp(_) => {
-                return Ok(buffer);
-            },
-            _ => {
-                return Ok(buffer);
-            },
-        }
+    match msg{
+        Message::OsdOp(_) => {
+            return Ok(buffer);
+        },
+        _ => {
+            return Ok(buffer);
+        },
     }
 }
 
@@ -664,7 +719,7 @@ pub enum CephMsgType{
     MsgPaxos = 40,
     MsgOsdMap = 41,
     MsgOsdOp = 42,
-    MsgOsdOpreply = 43,
+    MsgOsdOpReply = 43,
     MsgWatchNotify = 44,
     MsgForward = 46,
     MsgRoute = 47,
@@ -740,21 +795,11 @@ pub enum CephMsgType{
 }
 }
 
-impl CephMsgType{
-    fn to_message(msg: CephMsgType)->Message {
-        match msg{
-            CephMsgType::MsgOsdOp => Message::OsdOp,
-            CephMsgType::MsgPaxos => Message::Paxos(_),
-            _ => Message::Nop,
-        }
-    }
-}
-
 bitflags!{
     flags OsdOp: u32 {
         const CEPH_OSD_FLAG_ACK =            0x0001,  /* want (or is) "ack" ack */
         const CEPH_OSD_FLAG_ONNVRAM =        0x0002,  /* want (or is) "onnvram" ack */
-        const CEPH_OSD_FLAG_ONDISK =         0x0004,  /* want (or is) "ondisk" ack */
+        const CEPH_OSD_FLAG_ACK_ONDISK =     0x0004,  /* want (or is) "ondisk" ack */
         const CEPH_OSD_FLAG_RETRY =          0x0008,  /* resend attempt */
         const CEPH_OSD_FLAG_READ =           0x0010,  /* op may read */
         const CEPH_OSD_FLAG_WRITE =          0x0020,  /* op may write */
@@ -784,7 +829,7 @@ pub struct ObjectLocator{
     pub min_compat_version: u8,
     pub size: u32,
     pub pool: u64,
-    pub namespace_size: u64,
+    pub namespace_size: u32,
     pub namespace_data: Vec<u8>,
 }
 
@@ -794,12 +839,16 @@ impl CephPrimitive for ObjectLocator {
         let min_compat_version = try!(cursor.read_u8());
         let size = try!(cursor.read_u32::<LittleEndian>());
         let pool = try!(cursor.read_u64::<LittleEndian>());
-        let namespace_size = try!(cursor.read_u64::<LittleEndian>());
+        //TODO: Wireshark skips 8 bytes here.  What is this?
+        let _ = try!(cursor.read_u64::<LittleEndian>());
+        let namespace_size = try!(cursor.read_u32::<LittleEndian>());
         let mut namespace_buf: Vec<u8> = Vec::new();
         for _ in 0 .. namespace_size{
             let b = try!(cursor.read_u8());
-            namespace_buf.push(b.clone());
+            namespace_buf.push(b);
         }
+        //TODO: Wireshark skips 8 bytes here.  What is this?
+        let _ = try!(cursor.read_u64::<LittleEndian>());
 
         return Ok(
             ObjectLocator{
@@ -819,7 +868,7 @@ impl CephPrimitive for ObjectLocator {
         try!(buffer.write_u8(self.min_compat_version));
         try!(buffer.write_u32::<LittleEndian>(self.size));
         try!(buffer.write_u64::<LittleEndian>(self.pool));
-        try!(buffer.write_u64::<LittleEndian>(self.namespace_size));
+        try!(buffer.write_u32::<LittleEndian>(self.namespace_size));
 
         for b in &self.namespace_data{
             try!(buffer.write_u8(*b));
@@ -987,13 +1036,9 @@ pub struct CephOsdOperation{
 impl CephPrimitive for CephOsdOperation{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
         let client = try!(cursor.read_u32::<LittleEndian>());
-        println!("Client: {}", &client);
         let map_epoch = try!(cursor.read_u32::<LittleEndian>());
-        println!("Map_epoc: {}", &map_epoch);
         let flag_bits = try!(cursor.read_u32::<LittleEndian>());
-        println!("Flag bits: {}", flag_bits);
         let utime = try!(Utime::read_from_wire(cursor));
-        println!("utime: {:?}", &utime);
         let reassert_version = try!(cursor.read_u64::<LittleEndian>());
         let reassert_epoch = try!(cursor.read_u32::<LittleEndian>());
         let locator = try!(ObjectLocator::read_from_wire(cursor));

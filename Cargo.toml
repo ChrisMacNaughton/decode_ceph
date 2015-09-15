@@ -6,8 +6,11 @@ authors = ["Chris Holcombe <xfactor973@gmail.com>"]
 [dependencies]
 bitflags = "*"
 byteorder = "*"
+clap = "*"
 crc = "*"
 enum_primitive = "*"
 num = "*"
+pcap = "*"
 rust-crypto = "*"
 time = "*"
+users = "*"

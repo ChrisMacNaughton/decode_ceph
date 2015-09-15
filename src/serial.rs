@@ -598,8 +598,8 @@ pub enum Message{
     OsdFailure,
     OsdMarkMeDown,
     OsdMap,
-    OsdOp,
-    OsdOprepl,
+    OsdOp(CephOsdOperation),
+    OsdOprepl(CephOsdOperationReply),
     OsdPing,
     OsdSubop,
     OsdSubopreply,
@@ -637,6 +637,25 @@ pub enum Message{
     CrcHeader,
     DataPing,
     Nop,
+}
+
+impl CephPrimitive for Message{
+    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        return Ok(Message::Nop);
+    }
+
+    fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let buffer:Vec<u8> = Vec::new();
+
+        match self{
+            &Message::OsdOp(_) => {
+                return Ok(buffer);
+            },
+            _ => {
+                return Ok(buffer);
+            },
+        }
+    }
 }
 
 enum_from_primitive! {
@@ -719,6 +738,16 @@ pub enum CephMsgType{
     MsgDataPing = 0x602,
     MsgNop = 0x607,
 }
+}
+
+impl CephMsgType{
+    fn to_message(msg: CephMsgType)->Message {
+        match msg{
+            CephMsgType::MsgOsdOp => Message::OsdOp,
+            CephMsgType::MsgPaxos => Message::Paxos(_),
+            _ => Message::Nop,
+        }
+    }
 }
 
 bitflags!{
@@ -910,6 +939,29 @@ impl CephPrimitive for Operation {
 
         return Ok(buffer);
     }
+}
+
+#[derive(Debug)]
+pub struct ReplayVersion {
+    version: u64,
+    epoch: u32,
+}
+
+#[derive(Debug)]
+pub struct CephOsdOperationReply{
+    pub object_id: ObjectId,
+    pub placement_group: PlacementGroup,
+    pub flags: OsdOp,
+    pub result: u32,
+    pub bad_replay_version: ReplayVersion,
+    pub osd_map_epoch: u32,
+    pub operation_count: u32,
+    pub operation: Operation,
+    pub retry_attempt: u32,
+    pub operation_return_value: u32,
+    pub replay_version: ReplayVersion,
+    pub user_version: u64,
+
 }
 
 #[derive(Debug)]

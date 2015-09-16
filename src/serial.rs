@@ -1,5 +1,3 @@
-use crypto;
-
 extern crate byteorder;
 extern crate crc;
 extern crate num;
@@ -1078,6 +1076,18 @@ impl CephPrimitive for CephOsdOperationReply{
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer:Vec<u8> = Vec::new();
 
+        buffer.extend(try!(self.object_id.write_to_wire()));
+        buffer.extend(try!(self.placement_group.write_to_wire()));
+        try!(buffer.write_u32::<LittleEndian>(self.flags.bits));
+        buffer.extend(try!(self.bad_replay_version.write_to_wire()));
+        try!(buffer.write_u32::<LittleEndian>(self.osd_map_epoch));
+        try!(buffer.write_u32::<LittleEndian>(self.operation_count));
+        buffer.extend(try!(self.operation.write_to_wire()));
+        try!(buffer.write_u32::<LittleEndian>(self.retry_attempt));
+        try!(buffer.write_u32::<LittleEndian>(self.operation_return_value));
+        buffer.extend(try!(self.replay_version.write_to_wire()));
+        try!(buffer.write_u64::<LittleEndian>(self.user_version));
+
         return Ok(buffer);
     }
 }
@@ -1157,6 +1167,26 @@ impl CephPrimitive for CephOsdOperation{
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer:Vec<u8> = Vec::new();
 
+        try!(buffer.write_u32::<LittleEndian>(self.client));
+        try!(buffer.write_u32::<LittleEndian>(self.map_epoch));
+        try!(buffer.write_u32::<LittleEndian>(self.flags.bits));
+        buffer.extend(try!(self.modification_time.write_to_wire()));
+        try!(buffer.write_u64::<LittleEndian>(self.reassert_version));
+        try!(buffer.write_u32::<LittleEndian>(self.reassert_epoch));
+        buffer.extend(try!(self.locator.write_to_wire()));
+        buffer.extend(try!(self.placement_group.write_to_wire()));
+        buffer.extend(try!(self.object_id.write_to_wire()));
+        try!(buffer.write_u16::<LittleEndian>(self.operation_count));
+        buffer.extend(try!(self.operation.write_to_wire()));
+        try!(buffer.write_u64::<LittleEndian>(self.snapshot_id));
+        try!(buffer.write_u64::<LittleEndian>(self.snapshot_seq));
+        try!(buffer.write_u32::<LittleEndian>(self.snapshot_count));
+        try!(buffer.write_u32::<LittleEndian>(self.retry_attempt));
+
+        for b in &self.payload{
+            buffer.push(b.clone());
+        }
+
         return Ok(buffer);
     }
 }
@@ -1180,7 +1210,11 @@ impl CephPrimitive for PaxosMessage{
         });
     }
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-        let buffer: Vec<u8> = Vec::new();
+        let mut buffer: Vec<u8> = Vec::new();
+        try!(buffer.write_u64::<LittleEndian>(self.version));
+        try!(buffer.write_u16::<LittleEndian>(self.mon));
+        try!(buffer.write_u64::<LittleEndian>(self.mon_tid));
+
         return Ok(buffer);
     }
 }
@@ -1223,7 +1257,23 @@ impl CephPrimitive for MonCommand{
         });
     }
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-        let buffer: Vec<u8> = Vec::new();
+        let mut buffer: Vec<u8> = Vec::new();
+        buffer.extend(try!(self.paxos.write_to_wire()));
+
+        let fsid_copy = self.fsid.clone();
+        for b in fsid_copy.into_bytes(){
+            buffer.push(b.clone());
+        }
+
+        try!(buffer.write_u32::<LittleEndian>(self.argument_count));
+
+        for arg in &self.arguments{
+            let arg_copy = arg.clone();
+            for b in arg_copy.into_bytes(){
+                buffer.push(b.clone());
+            }
+        }
+
         return Ok(buffer);
     }
 }
@@ -1599,7 +1649,7 @@ pub struct EntityAddr{
 impl CephPrimitive for EntityAddr{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
         //type
-        let addr_type = try!(cursor.read_u32::<LittleEndian>());
+        let _ = try!(cursor.read_u32::<LittleEndian>());
         let nonce = try!(cursor.read_u32::<LittleEndian>());
         //type-str
         let address_family = try!(cursor.read_u16::<BigEndian>());

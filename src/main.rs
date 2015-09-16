@@ -226,16 +226,19 @@ fn check_for_connect<'a>(cursor: &mut Cursor<&'a [u8]>){
     println!("Ceph connect: {}", s);
 }
 
-fn print_packet(header: PacketHeader, msg: serial::CephMsgrMsg){
+fn print_packet(header: PacketHeader, msg: serial::CephMsgrMsg, h: &pcap::PacketHeader){
     //Print OSD operation packets
     match msg.msg{
         serial::Message::OsdOp(osd_op) => {
-                println!("{{\"src_ip\": \"{:?}\",\"dst_ip\": \"{:?}\", \"operation\":\"{:?}\", \"operation_count\":{}, \"size\":{} }}",
+                println!("{{\"src_ip\": \"{:?}\",\"dst_ip\": \"{:?}\", \"operation\":\"{:?}\", \
+                \"operation_count\":{}, \"size\":{}, \"tv_sec\":{:?}, \"tv_usec\":{} }}",
                     header.src_v4addr,
                     header.dst_v4addr,
                     osd_op.flags,
                     osd_op.operation_count,
-                    osd_op.operation.size);
+                    osd_op.operation.size,
+                    h.ts.tv_sec,
+                    h.ts.tv_usec);
         }
         _=> {
             return;
@@ -316,7 +319,7 @@ fn main() {
                 if result.is_ok(){
                     if packet_header.is_ok(){
                         let p = packet_header.unwrap();
-                        print_packet(p, result.unwrap());
+                        print_packet(p, result.unwrap(), &packet.header);
                     }
                 }
             }

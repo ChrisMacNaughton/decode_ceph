@@ -5,7 +5,7 @@ extern crate time;
 use serial;
 
 use std::io::prelude::*;
-use self::byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
+use self::byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::ops::Add;
 use self::num::FromPrimitive;
 

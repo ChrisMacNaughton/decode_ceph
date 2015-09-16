@@ -8,12 +8,11 @@ extern crate pcap;
 extern crate users;
 
 mod serial;
-use serial::{CephMsg, CephPrimitive};
+use serial::{CephPrimitive};
 mod crypto;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use clap::{App, Arg};
-use num::FromPrimitive;
 use pcap::{Capture, Device};
 
 use std::io::Cursor;
@@ -169,9 +168,7 @@ fn parse_etherframe<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<PacketHeader, ser
 
         //Skip the TCP header bullshit
         current_pos = cursor.position();
-        println!("Current position {}", current_pos);
         cursor.set_position(current_pos + 28);
-        println!("Skipping to {}", cursor.position());
 
         return Ok(
             PacketHeader{
@@ -229,78 +226,41 @@ fn check_for_connect<'a>(cursor: &mut Cursor<&'a [u8]>){
     println!("Ceph connect: {}", s);
 }
 
+fn print_packet(header: PacketHeader, msg: serial::CephMsgrMsg){
+    //Print OSD operation packets
+    match msg.msg{
+        serial::Message::OsdOp(osd_op) => {
+                println!("{{\"src_ip\": \"{:?}\",\"dst_ip\": \"{:?}\", \"operation\":\"{:?}\", \"operation_count\":{}, \"size\":{} }}",
+                    header.src_v4addr,
+                    header.dst_v4addr,
+                    osd_op.flags,
+                    osd_op.operation_count,
+                    osd_op.operation.size);
+        }
+        _=> {
+            return;
+        }
+    }
+}
 
 //MSGR is Ceph's outer message protocol
-fn dissect_msgr<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<(), serial::SerialError>{
+fn dissect_msgr<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<serial::CephMsgrMsg, serial::SerialError>{
     let tag_bytes = try!(cursor.read_u8());
-    println!("TAG Bytes: {}", &tag_bytes);
     if tag_bytes == 63 {
         //This might be a Ceph banner message
         check_for_connect(cursor);
-        return Ok(());
+        //return Ok(serial::CephMsg::NOP);
     }
+
     if tag_bytes == 0{
         dissect_new(cursor);
     }
-    let tag = serial::CephMsg::from_u8(tag_bytes);
-    if tag.is_some(){
-        println!("Found a frontend ceph msg: {:?}", tag);
-        let result = serial::CephMsgrMsg::read_from_wire(cursor);
-        println!("CephMsgrMsg: {:?}", result);
-    }
-    let cmt = serial::CephMsgType::from_u8(tag_bytes);
 
-    if cmt.is_some(){
-        println!("Found a backend ceph msg: {:?}", cmt);
-    }
-
-/*
-    match tag{
-        CephMsg::Ready => {
-            println!("READY");
-        },
-        CephMsg::Reset => {
-            println!("RESET");
-        },
-        CephMsg::Wait => {
-            println!("WAIT");
-        },
-        CephMsg::RetrySession => {
-            println!("RetrySession");
-        },
-        CephMsg::RetryGlobal => {
-            println!("RetryGlobal");
-        },
-        CephMsg::Close => {
-            println!("CLOSE");
-        },
-        CephMsg::Msg => {
-            println!("MSG");
-        },
-        CephMsg::Ack => {
-            let seq_num = try!(cursor.read_u64::<LittleEndian>());
-            println!("ACK: seq number: {}", seq_num);
-        },
-        CephMsg::KeepAlive => {
-            println!("KeepAlive");
-        },
-        CephMsg::BadProtocolVersion => {},
-        CephMsg::BadAuthorizer => {},
-        CephMsg::InsufficientFeatures => {
-            println!("InsufficientFeatures");
-        },
-        CephMsg::Seq => {
-            println!("SEQ");
-        },
-        CephMsg::KeepAlive2 => {
-            println!("KEEP_ALIVE2");
-        },
-        CephMsg::KeepAlive2Ack => {
-            println!("KEEP_ALIVE2_ACK");
-        },
-    };
-    */
-    return Ok(());
+    //Rewind and let CephMsgrMsg figure it out
+    let current_pos = cursor.position();
+    cursor.set_position(current_pos - 1); //Back 1 byte
+    let result = try!(serial::CephMsgrMsg::read_from_wire(cursor));
+    return Ok(result);
 }
 
 fn main() {
@@ -328,7 +288,7 @@ fn main() {
             println!("Setting up capture");
             let mut cap = Capture::from_device(dev_device).unwrap() //open the device
                           .promisc(true)
-                          .snaplen(250)
+                          .snaplen(350)
                           .timeout(60000) //60 seconds
                           .open() //activate the handle
                           .unwrap(); //assume activation worked
@@ -356,13 +316,8 @@ fn main() {
                 if result.is_ok(){
                     if packet_header.is_ok(){
                         let p = packet_header.unwrap();
-                        println!("Src: {}:{} Dst: {}:{}",
-                            p.src_v4addr.unwrap(),
-                            p.src_port,
-                            p.dst_v4addr.unwrap(),
-                            p.dst_port);
+                        print_packet(p, result.unwrap());
                     }
-                    println!("CEPH TAG: {:?}", result);
                 }
             }
         }

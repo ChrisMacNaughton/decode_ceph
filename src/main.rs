@@ -3,9 +3,11 @@
 #[macro_use] extern crate bitflags;
 extern crate byteorder;
 extern crate clap;
+extern crate ease;
 extern crate num;
 extern crate pcap;
 extern crate users;
+extern crate time;
 
 mod serial;
 use serial::{CephPrimitive};
@@ -17,6 +19,7 @@ use pcap::{Capture, Device};
 
 use std::io::Cursor;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::str::FromStr;
 
 #[cfg(test)]
 mod tests{
@@ -116,6 +119,42 @@ fn check_user()->Result<(), ()>{
 }
 
 #[derive(Debug)]
+struct Document{
+    header: PacketHeader,
+    flags: serial::OsdOp,
+    operation_count: u16,
+    size: u64,
+    timestamp: u64, //Milliseconds since epoch
+}
+
+// JSON value representation
+impl Document{
+    fn to_json(&self)->Result<String, String>{
+        if self.header.src_v4addr.is_some() && self.header.dst_v4addr.is_some(){
+            return Ok(format!("{{\"src_ip\": \"{}\",\"dst_ip\": \"{}\", \"operation\":\"{:?}\", \
+                    \"operation_count\":{}, \"size\":{}, \"postDate\":\"{}\"}}",
+                    self.header.src_v4addr.unwrap(),
+                    self.header.dst_v4addr.unwrap(),
+                    self.flags,
+                    self.operation_count,
+                    self.size,
+                    self.timestamp));
+        }else if self.header.src_v6addr.is_some() && self.header.dst_v6addr.is_some(){
+            return Ok(format!("{{\"src_ip\": \"{}\",\"dst_ip\": \"{}\", \"operation\":\"{:?}\", \
+                    \"operation_count\":{}, \"size\":{}, \"postDate\":\"{}\"}}",
+                    self.header.src_v6addr.unwrap(),
+                    self.header.dst_v6addr.unwrap(),
+                    self.flags,
+                    self.operation_count,
+                    self.size,
+                    self.timestamp));
+        }else{
+            return Err("src_v4addr or src_v6addr is missing".to_string());
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct PacketHeader{
     pub src_port: u16,
     pub dst_port: u16,
@@ -212,36 +251,49 @@ fn parse_etherframe<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<PacketHeader, ser
 fn dissect_new<'a>(cursor: &mut Cursor<&'a [u8]>){
     let result = serial::EntityAddr::read_from_wire(cursor);
     if result.is_ok(){
-        println!("New? {:?}", result);
+        //println!("New? {:?}", result);
     }
 }
 
-fn check_for_connect<'a>(cursor: &mut Cursor<&'a [u8]>){
+fn check_for_connect<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<(),String>{
     let mut banner_vec:Vec<u8> = Vec::new();
     for _ in 0..8{
-        let b = cursor.read_u8().unwrap();
+        let b = try!(cursor.read_u8().map_err(|e| e.to_string()));
         banner_vec.push(b);
     }
-    let s = String::from_utf8(banner_vec).unwrap();
+    let s = try!(String::from_utf8(banner_vec).map_err(|e| e.to_string()));
     println!("Ceph connect: {}", s);
+    return Ok(());
 }
 
-fn print_packet(header: PacketHeader, msg: serial::CephMsgrMsg, h: &pcap::PacketHeader){
+fn print_packet(header: PacketHeader, msg: serial::CephMsgrMsg)->Result<(),String>{
     //Print OSD operation packets
     match msg.msg{
         serial::Message::OsdOp(osd_op) => {
-                println!("{{\"src_ip\": \"{:?}\",\"dst_ip\": \"{:?}\", \"operation\":\"{:?}\", \
-                \"operation_count\":{}, \"size\":{}, \"tv_sec\":{:?}, \"tv_usec\":{} }}",
-                    header.src_v4addr,
-                    header.dst_v4addr,
-                    osd_op.flags,
-                    osd_op.operation_count,
-                    osd_op.operation.size,
-                    h.ts.tv_sec,
-                    h.ts.tv_usec);
+            //Grab the current time to send along
+            let now = time::now();
+            let now_seconds = try!(time::strftime("%s", &now).map_err(|e| e.to_string()));
+            let miliseconds_since_epoch = try!(u64::from_str(&now_seconds).map_err(|e| e.to_string())) * 1000;
+
+            let doc = Document{
+                header: header,
+                flags: osd_op.flags,
+                operation_count: osd_op.operation_count,
+                size: osd_op.operation.size,
+                timestamp: miliseconds_since_epoch,
+            };
+            let doc_json = try!(doc.to_json());
+            println!("Sending document to elasticsearch for indexing");
+            println!("{:?}", &doc_json);
+            let url = try!(ease::Url::parse("http://10.0.3.119:9200/ceph/operations").map_err(|e| e.to_string()));
+            let mut req = ease::Request::new(url);
+            req.body(doc_json);
+            let result = req.post();
+            println!("Result: {:?}", result);
+            return Ok(());
         }
         _=> {
-            return;
+            return Ok(());
         }
     }
 }
@@ -252,7 +304,6 @@ fn dissect_msgr<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<serial::CephMsgrMsg, 
     if tag_bytes == 63 {
         //This might be a Ceph banner message
         check_for_connect(cursor);
-        //return Ok(serial::CephMsg::NOP);
     }
 
     if tag_bytes == 0{
@@ -261,7 +312,7 @@ fn dissect_msgr<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<serial::CephMsgrMsg, 
 
     //Rewind and let CephMsgrMsg figure it out
     let current_pos = cursor.position();
-    cursor.set_position(current_pos - 1); //Back 1 byte
+    cursor.set_position(current_pos - 1); //Back up by 1 byte
     let result = try!(serial::CephMsgrMsg::read_from_wire(cursor));
     return Ok(result);
 }
@@ -319,7 +370,7 @@ fn main() {
                 if result.is_ok(){
                     if packet_header.is_ok(){
                         let p = packet_header.unwrap();
-                        print_packet(p, result.unwrap(), &packet.header);
+                        let print_result = print_packet(p, result.unwrap());
                     }
                 }
             }

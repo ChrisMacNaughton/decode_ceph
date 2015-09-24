@@ -19,11 +19,6 @@ use std::string::FromUtf8Error;
 /*
 CEPH_BANNER "ceph v027"
 CEPH_BANNER_MAX_LEN 30
-
-typedef u32le epoch_t;
-typedef u32le ceph_seq_t;
-typedef u64le ceph_tid_t;
-typedef u64le version_t;
 */
 #[cfg(test)]
 mod tests{
@@ -686,6 +681,7 @@ pub enum Message{
 fn read_message_from_wire<R: Read>(cursor: &mut R, msg_type: &CephMsgType) -> Result<Message, SerialError>{
     match msg_type{
         &CephMsgType::MsgOsdOp => {
+            println!("OsdOp");
             let osdop = try!(CephOsdOperation::read_from_wire(cursor));
             return Ok(Message::OsdOp(osdop));
         },
@@ -703,16 +699,22 @@ fn read_message_from_wire<R: Read>(cursor: &mut R, msg_type: &CephMsgType) -> Re
     }
 }
 
-//TODO: Note this function is going to get massive.  Figure out a way to shrink it
 fn write_message_to_wire(msg: Message) -> Result<Vec<u8>, SerialError>{
-    let buffer:Vec<u8> = Vec::new();
-
     match msg{
-        Message::OsdOp(_) => {
-            return Ok(buffer);
+        Message::MonCommand(ref mon_cmd) =>{
+            let bytes = try!(mon_cmd.write_to_wire());
+            return Ok(bytes);
+        },
+        Message::OsdOp(ref osd_op) => {
+            let bytes = try!(osd_op.write_to_wire());
+            return Ok(bytes);
+        },
+        Message::OsdOpRepl(ref osd_op) => {
+            let bytes = try!(osd_op.write_to_wire());
+            return Ok(bytes);
         },
         _ => {
-            return Ok(buffer);
+            return Ok(Vec::new());
         },
     }
 }
@@ -1136,12 +1138,18 @@ impl CephPrimitive for CephOsdOperation{
         let snapshot_seq = try!(cursor.read_u64::<LittleEndian>());
         let snapshot_count = try!(cursor.read_u32::<LittleEndian>());
         let retry_attempt = try!(cursor.read_u32::<LittleEndian>());
-        let mut payload_buffer: Vec<u8> = Vec::new();
+        //TODO: maybe we should skip copying this into a buffer.  I don't really care
+        //what the data contained is.  I mostly care about the READ/WRITE sizes.
+        let payload_buffer: Vec<u8> = Vec::new();
 
+        /*
+        //Skipping the copy of the data because I only really care about the read/write sizes
+        //We could add this in again if it's really critical to know exactly what is being written
         for _ in 0..operation.payload_size{
             let b = try!(cursor.read_u8());
             payload_buffer.push(b);
         }
+        */
 
         return Ok(
             CephOsdOperation{
@@ -1742,36 +1750,29 @@ impl CephPrimitive for EntityAddr{
         return Ok(buffer);
     }
 }
-/*
-struct ceph_list<T> {
-        u32le length;
-        T     elements[length];
-}
-impl <T>CephPrimitive for Vec<T>{
-	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        return Ok(Vec::new())
-    }
-	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-        return Ok(Vec::new());
-    }
-}
-*/
 
 //Connect to Ceph Monitor and send a hello banner
 fn send_banner(socket: &mut TcpStream)->Result<usize, SerialError>{
     let banner = String::from("ceph v027");
     let written_bytes = try!(socket.write(banner.as_bytes()));
-    if written_bytes != 0{
-        return Err(SerialError::new("blah".to_string()));
+    if written_bytes <= 0{
+        return Err(SerialError::new("Unable to send banner".to_string()));
     }else{
         return Ok(written_bytes);
     }
 }
 
-fn send_msg(socket: &mut TcpStream){
-
+fn send_msg(socket: &mut TcpStream, msg: Message)->Result<usize, SerialError>{
+    let bytes_to_send = try!(write_message_to_wire(msg));
+    let written_bytes = try!(socket.write(&bytes_to_send[..]));
+    if written_bytes <= 0{
+        return Err(SerialError::new("Unable to send_msg".to_string()));
+    }else{
+        return Ok(written_bytes);
+    }
 }
 
+//TODO: What should this do?
 fn recv_msg(socket: &mut TcpStream){
 
 }

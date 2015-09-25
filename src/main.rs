@@ -95,6 +95,8 @@ mod tests{
 }
 
 fn get_device()->String{
+    let output_types = ["elastic_search", "graphite", "stdout"];
+
     let matches = App::new("decode_ceph")
                       .author("Chris Holcombe, chris.holcombe@canonical.com")
                       .about("Analyzes Ceph in real time")
@@ -103,6 +105,25 @@ fn get_device()->String{
                            .long("interface")
                            .help("The network device to monitor Ceph traffic on")
                            .takes_value(true)
+                       )
+                       .arg(Arg::with_name("ES")
+                            .short("e")
+                            .long("elasticsearch")
+                            .help("Send data to elasticsearch")
+                            .requires_all(&["", ""])
+                       )
+                       .arg(Arg::with_name("SERVER")
+                            .short("s")
+                            .long("server")
+                            .help("Server to send data to")
+                            .takes_value(true)
+                            .requires("port")
+                       )
+                       .arg(Arg::with_name("PORT")
+                            .short("p")
+                            .long("port")
+                            .help("Port on server to send data to")
+                            .takes_value(true)
                        )
                       .get_matches();
     let device = matches.value_of("NET").unwrap_or("");

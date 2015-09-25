@@ -18,8 +18,8 @@ use clap::{App, Arg};
 use pcap::{Capture, Device};
 
 use std::io::Cursor;
-use std::net::{Ipv4Addr, Ipv6Addr};
-use std::str::FromStr;
+use std::io::prelude::*;
+use std::net::{Ipv4Addr, Ipv6Addr, TcpStream};
 
 #[cfg(test)]
 mod tests{
@@ -266,32 +266,93 @@ fn check_for_connect<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<(),String>{
     return Ok(());
 }
 
-fn print_packet(header: PacketHeader, msg: serial::CephMsgrMsg)->Result<(),String>{
-    //Print OSD operation packets
+fn get_time()->u64{
+    let now = time::now();
+    let milliseconds_since_epoch = now.to_timespec().sec * 1000;
+    return milliseconds_since_epoch as u64;
+}
+
+fn log_packet_to_graphite(server: &str, port: u16, data: &str)->Result<(), String>{
+    //Graphite is plaintext
+    //echo "local.random.diceroll 4 `date +%s`" | nc -q0 ${SERVER} ${PORT}
+
+    let mut stream = try!(TcpStream::connect((server, port)).map_err(|e| e.to_string()));
+    let _ = stream.write(&[1]);
+
+    return Ok(());
+}
+
+fn log_packet_to_es(url: &str, json: &String)->Result<(), String>{
+    let parsed_url = try!(ease::Url::parse(url).map_err(|e| e.to_string()));
+    let mut req = ease::Request::new(parsed_url);
+    req.body(json.clone());
+    match req.post(){
+        Ok(_) => {
+            println!("Logged to ES");
+            return Ok(());},
+        Err(_) => {
+            println!("ES POST FAILED");
+            return Err("Post operation failed".to_string());
+        }
+    };
+}
+
+fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg)->Result<(),String>{
+    //Process OSD operation packets
     match msg.msg{
+        //Client -> OSD operation
         serial::Message::OsdOp(osd_op) => {
             //Grab the current time to send along
             let now = time::now();
-            let now_seconds = try!(time::strftime("%s", &now).map_err(|e| e.to_string()));
-            let miliseconds_since_epoch = try!(u64::from_str(&now_seconds).map_err(|e| e.to_string())) * 1000;
+            let time_spec = now.to_timespec();
+            let milliseconds_since_epoch = get_time();
+
+            let graphite_data = format!("ceph.{}.{:?}.{} {}",
+                &header.src_v4addr.unwrap(),
+                &osd_op.flags,
+                &osd_op.operation.size,
+                time_spec.sec);
+            println!("Graphite data: {}", &graphite_data);
 
             let doc = Document{
                 header: header,
                 flags: osd_op.flags,
                 operation_count: osd_op.operation_count,
                 size: osd_op.operation.size,
-                timestamp: miliseconds_since_epoch,
+                timestamp: milliseconds_since_epoch,
             };
             let doc_json = try!(doc.to_json());
-            println!("Sending document to elasticsearch for indexing");
-            println!("{:?}", &doc_json);
-            let url = try!(ease::Url::parse("http://10.0.3.119:9200/ceph/operations").map_err(|e| e.to_string()));
-            let mut req = ease::Request::new(url);
-            req.body(doc_json);
-            let result = req.post();
-            println!("Result: {:?}", result);
+            try!(log_packet_to_es("http://10.0.3.144:9200/ceph/operations", &doc_json));
+            try!(log_packet_to_graphite("10.0.3.144", 2003, &graphite_data));
             return Ok(());
-        }
+        },
+        //Osd <-> Osd operation
+        serial::Message::OsdSubop(sub_op) => {
+            let now = time::now();
+            let time_spec = now.to_timespec();
+            let milliseconds_since_epoch = get_time();
+
+            let graphite_data = format!("ceph.{}.{:?}.{} {}",
+                &header.src_v4addr.unwrap(),
+                &sub_op.flags,
+                &sub_op.operation.size,
+                time_spec.sec);
+            println!("Graphite data: {}", &graphite_data);
+
+            let es_doc = Document{
+                header: header,
+                flags: sub_op.flags,
+                operation_count: sub_op.operation_count,
+                size: sub_op.operation.size,
+                timestamp: milliseconds_since_epoch,
+            };
+            let doc_json = try!(es_doc.to_json());
+
+            let graphite_data = format!("");
+            try!(log_packet_to_es("http://10.0.3.144:9200/ceph/operations", &doc_json));
+            try!(log_packet_to_graphite("10.0.3.144", 2003, &graphite_data));
+            return Ok(());
+        },
         _=> {
             return Ok(());
         }
@@ -303,15 +364,19 @@ fn dissect_msgr<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<serial::CephMsgrMsg, 
     let tag_bytes = try!(cursor.read_u8());
     if tag_bytes == 63 {
         //This might be a Ceph banner message
+        println!("check_for_connect");
         check_for_connect(cursor);
     }
 
     if tag_bytes == 0{
+        //println!("dissect_new");
         dissect_new(cursor);
     }
 
     //Rewind and let CephMsgrMsg figure it out
+    //println!("Packet: {:?}", &cursor);
     let current_pos = cursor.position();
+    //println!("backing up 1 byte");
     cursor.set_position(current_pos - 1); //Back up by 1 byte
     let result = try!(serial::CephMsgrMsg::read_from_wire(cursor));
     return Ok(result);
@@ -342,7 +407,7 @@ fn main() {
             println!("Setting up capture");
             let mut cap = Capture::from_device(dev_device).unwrap() //open the device
                           .promisc(true)
-                          .snaplen(350)
+                          //.snaplen(500)
                           .timeout(60000) //60 seconds
                           .open() //activate the handle
                           .unwrap(); //assume activation worked
@@ -370,7 +435,7 @@ fn main() {
                 if result.is_ok(){
                     if packet_header.is_ok(){
                         let p = packet_header.unwrap();
-                        let print_result = print_packet(p, result.unwrap());
+                        let print_result = process_packet(p, result.unwrap());
                     }
                 }
             }

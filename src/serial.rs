@@ -327,15 +327,25 @@ impl CephPrimitive for CephMsgrMsg{
             }
         };
         let header = try!(CephMsgHeader::read_from_wire(cursor));
+        //println!("header: {:?}", &header);
         //CephMsg is sandwhiched between these two fields
         let msg = try!(read_message_from_wire(cursor, &header.msg_type));
-        let footer = try!(CephMsgFooter::read_from_wire(cursor));
+        //println!("msg: {:?}", &msg);
+        //Skip the footer for now
+        //let footer = try!(CephMsgFooter::read_from_wire(cursor));
+        //println!("footer: {:?}", &footer);
 
         return Ok(CephMsgrMsg{
             tag: tag,
             header: header,
             msg: msg,
-            footer: footer,
+            footer: CephMsgFooter{
+                front_crc: 0,
+                middle_crc: 0,
+                data_crc: 0,
+                crypto_sig: 0,
+                flags: 0,
+            },
         });
     }
 
@@ -639,8 +649,8 @@ pub enum Message{
     OsdOp(CephOsdOperation),
     OsdOpRepl(CephOsdOperationReply),
     OsdPing,
-    OsdSubop,
-    OsdSubopreply,
+    OsdSubop(CephOsdOperation),
+    OsdSubopReply(CephOsdOperationReply),
     OsdPgtemp,
     OsdPgNotify,
     OsdPgQuery,
@@ -681,13 +691,26 @@ pub enum Message{
 fn read_message_from_wire<R: Read>(cursor: &mut R, msg_type: &CephMsgType) -> Result<Message, SerialError>{
     match msg_type{
         &CephMsgType::MsgOsdOp => {
-            println!("OsdOp");
+            println!("osdop");
             let osdop = try!(CephOsdOperation::read_from_wire(cursor));
+            println!("osdop parsed");
             return Ok(Message::OsdOp(osdop));
         },
         &CephMsgType::MsgOsdOpReply => {
+            println!("opreply");
             let op_reply = try!(CephOsdOperationReply::read_from_wire(cursor));
             return Ok(Message::OsdOpRepl(op_reply));
+        },
+        &CephMsgType::MsgOsdSubop => {
+            println!("subop");
+            let osdop = try!(CephOsdOperation::read_from_wire(cursor));
+            println!("subop: {:?}", &osdop);
+            return Ok(Message::OsdSubop(osdop));
+        },
+        &CephMsgType::MsgOsdSubopReply => {
+            println!("subopreply");
+            let osdop = try!(CephOsdOperationReply::read_from_wire(cursor));
+            return Ok(Message::OsdSubopReply(osdop));
         },
         &CephMsgType::MsgMonCommand =>{
             let mon_command = try!(MonCommand::read_from_wire(cursor));
@@ -757,7 +780,7 @@ pub enum CephMsgType{
     MsgOsdAlive = 73,
     MsgOsdMarkMeDown = 74,
     MsgOsdSubop = 76,
-    MsgOsdSubopreply = 77,
+    MsgOsdSubopReply = 77,
     MsgOsdPgtemp = 78,
     MsgOsdPgNotify = 80,
     MsgOsdPgQuery = 81,
@@ -1142,14 +1165,12 @@ impl CephPrimitive for CephOsdOperation{
         //what the data contained is.  I mostly care about the READ/WRITE sizes.
         let payload_buffer: Vec<u8> = Vec::new();
 
-        /*
         //Skipping the copy of the data because I only really care about the read/write sizes
         //We could add this in again if it's really critical to know exactly what is being written
-        for _ in 0..operation.payload_size{
+        /*for _ in 0..operation.payload_size{
             let b = try!(cursor.read_u8());
             payload_buffer.push(b);
-        }
-        */
+        }*/
 
         return Ok(
             CephOsdOperation{
@@ -1351,6 +1372,7 @@ impl CephPrimitive for CephMsgHeader{
         let sequenece_num = try!(cursor.read_u64::<LittleEndian>());
         let transcation_id = try!(cursor.read_u64::<LittleEndian>());
         let msg_type_bits = try!(cursor.read_u16::<LittleEndian>());
+        //println!("msg_type bits: {:?}", &msg_type_bits);
         let msg_type = match CephMsgType::from_u16(msg_type_bits){
             Some(t) => t,
             None => {

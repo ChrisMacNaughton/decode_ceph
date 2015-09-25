@@ -309,12 +309,13 @@ fn get_time()->u64{
     return milliseconds_since_epoch as u64;
 }
 
-fn log_packet_to_graphite(server: &str, port: u16, data: &str)->Result<(), String>{
+fn log_packet_to_graphite(server: &str, port: u16, data: String)->Result<(), String>{
     //Graphite is plaintext
     //echo "local.random.diceroll 4 `date +%s`" | nc -q0 ${SERVER} ${PORT}
 
     let mut stream = try!(TcpStream::connect((server, port)).map_err(|e| e.to_string()));
-    let _ = stream.write(&[1]);
+    let bytes_written = try!(stream.write(&data.into_bytes()[..]).map_err(|e| e.to_string()));
+    println!("Wrote: {} bytes to graphite", &bytes_written);
 
     return Ok(());
 }
@@ -360,7 +361,7 @@ fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg)->Result<(),Str
             };
             let doc_json = try!(doc.to_json());
             try!(log_packet_to_es("http://10.0.3.144:9200/ceph/operations", &doc_json));
-            try!(log_packet_to_graphite("10.0.3.144", 2003, &graphite_data));
+            try!(log_packet_to_graphite("10.0.3.118", 2003, graphite_data));
             return Ok(());
         },
         //Osd <-> Osd operation
@@ -387,7 +388,7 @@ fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg)->Result<(),Str
 
             let graphite_data = format!("");
             try!(log_packet_to_es("http://10.0.3.144:9200/ceph/operations", &doc_json));
-            try!(log_packet_to_graphite("10.0.3.144", 2003, &graphite_data));
+            try!(log_packet_to_graphite("10.0.3.118", 2003, graphite_data));
             return Ok(());
         },
         _=> {

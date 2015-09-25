@@ -6,7 +6,7 @@ authors = ["Chris Holcombe <xfactor973@gmail.com>"]
 [dependencies]
 bitflags = "*"
 byteorder = "*"
-clap = "*"
+clap = {version = "*", features = ["yaml"]}
 crc = "*"
 ease = "*"
 enum_primitive = "*"

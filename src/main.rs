@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 #[macro_use] extern crate enum_primitive;
 #[macro_use] extern crate bitflags;
+#[macro_use] extern crate clap;
 extern crate byteorder;
-extern crate clap;
 extern crate ease;
 extern crate num;
 extern crate pcap;
@@ -14,7 +14,7 @@ use serial::{CephPrimitive};
 mod crypto;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use clap::{App, Arg};
+use clap::App;
 use pcap::{Capture, Device};
 
 use std::io::Cursor;
@@ -94,41 +94,55 @@ mod tests{
     }
 }
 
+#[derive(Debug)]
+struct Args {
+    interface: String,
+    carbon: String,
+    elasticsearch: String,
+    stdout: String,
+    outputs: Vec<String>,
+}
+
+impl Args {
+    fn new(interface: &str, carbon: &str, elasticsearch: &str, stdout: &str, outputs: Vec<String>) -> Args {
+        Args {
+            interface: interface.to_string(),
+            carbon: carbon.to_string(),
+            elasticsearch: elasticsearch.to_string(),
+            stdout: stdout.to_string(),
+            outputs: outputs,
+        }
+    }
+}
+
+fn get_arguments() -> Args{
+    let output_types = vec!["elastic_search", "carbon", "stdout"];
+    let yaml = load_yaml!("cli.yaml");
+    let matches = App::from_yaml(yaml).get_matches();
+    let mut outputs:Vec<String> = Vec::new();
+    if let Some(ref out) = matches.values_of("OUTPUTS") {
+        for output in out.iter() {
+            if output_types.contains(output) {
+                outputs.push(output.to_string());
+            } else {
+                println!("{} is not a valid output type", output);
+            }
+        }
+    }
+    Args::new(
+        matches.value_of("NET").unwrap_or(""),
+        matches.value_of("CARBON").unwrap_or("127.0.0.1:2003"),
+        matches.value_of("ES").unwrap_or("127.0.0.1:9300"),
+        matches.value_of("STDOUT").unwrap_or("."),
+        outputs,
+    )
+}
+
 fn get_device()->String{
     let output_types = ["elastic_search", "graphite", "stdout"];
+    let args = get_arguments();
 
-    let matches = App::new("decode_ceph")
-                      .author("Chris Holcombe, chris.holcombe@canonical.com")
-                      .about("Analyzes Ceph in real time")
-                      .arg(Arg::with_name("NET")
-                           .short("i")
-                           .long("interface")
-                           .help("The network device to monitor Ceph traffic on")
-                           .takes_value(true)
-                       )
-                       /*
-                       .arg(Arg::with_name("ES")
-                            .short("e")
-                            .long("elasticsearch")
-                            .help("Send data to elasticsearch")
-                            .requires_all(&["", ""])
-                       )
-                       .arg(Arg::with_name("SERVER")
-                            .short("s")
-                            .long("server")
-                            .help("Server to send data to")
-                            .takes_value(true)
-                            .requires("port")
-                       )
-                       .arg(Arg::with_name("PORT")
-                            .short("p")
-                            .long("port")
-                            .help("Port on server to send data to")
-                            .takes_value(true)
-                       )
-                       */
-                      .get_matches();
-    let device = matches.value_of("NET").unwrap_or("");
+    let device  = args.interface;
     return device.to_string();
 }
 

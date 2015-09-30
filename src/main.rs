@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 #[macro_use] extern crate enum_primitive;
 #[macro_use] extern crate bitflags;
+#[macro_use] extern crate clap;
 extern crate byteorder;
-extern crate clap;
 extern crate ease;
 extern crate num;
 extern crate pcap;
@@ -20,6 +20,7 @@ use pcap::{Capture, Device};
 use std::io::Cursor;
 use std::io::prelude::*;
 use std::net::{Ipv4Addr, Ipv6Addr, TcpStream};
+use std::str::FromStr;
 
 #[cfg(test)]
 mod tests{
@@ -94,40 +95,43 @@ mod tests{
     }
 }
 
-fn get_device()->String{
-    let output_types = ["elastic_search", "graphite", "stdout"];
+#[derive(Debug)]
+struct Args {
+    carbon: Option<String>,
+    elasticsearch: Option<String>,
+    stdout: Option<String>,
+    outputs: Vec<String>,
+}
 
-    let matches = App::new("decode_ceph")
-                      .author("Chris Holcombe, chris.holcombe@canonical.com")
-                      .about("Analyzes Ceph in real time")
-                      .arg(Arg::with_name("NET")
-                           .short("i")
-                           .long("interface")
-                           .help("The network device to monitor Ceph traffic on")
-                           .takes_value(true)
-                       )
-                       .arg(Arg::with_name("ES")
-                            .short("e")
-                            .long("elasticsearch")
-                            .help("Send data to elasticsearch")
-                            .requires_all(&["", ""])
-                       )
-                       .arg(Arg::with_name("SERVER")
-                            .short("s")
-                            .long("server")
-                            .help("Server to send data to")
-                            .takes_value(true)
-                            .requires("port")
-                       )
-                       .arg(Arg::with_name("PORT")
-                            .short("p")
-                            .long("port")
-                            .help("Port on server to send data to")
-                            .takes_value(true)
-                       )
-                      .get_matches();
-    let device = matches.value_of("NET").unwrap_or("");
-    return device.to_string();
+fn parse_option<'a, 'b>(option: &str, matches: &clap::ArgMatches<'a, 'b>) -> Option<String>{
+    match matches.value_of(option){
+        Some(opt) => Some(opt.to_string()),
+        None => None,
+    }
+}
+
+fn get_arguments() -> Args{
+    let output_types = vec!["elastic_search", "carbon", "stdout"];
+    let yaml = load_yaml!("cli.yaml");
+    let matches = App::from_yaml(yaml).get_matches();
+    let mut outputs:Vec<String> = Vec::new();
+
+    if let Some(ref out) = matches.values_of("OUTPUTS") {
+        for output in out.iter() {
+            if output_types.contains(output) {
+                outputs.push(output.to_string());
+            } else {
+                println!("{} is not a valid output type", output);
+            }
+        }
+    }
+
+    return Args{
+        carbon: parse_option("CARBON", &matches),
+        elasticsearch: parse_option("ES", &matches),
+        stdout: parse_option("STDOUT", &matches),
+        outputs: outputs,
+    };
 }
 
 fn check_user()->Result<(), ()>{
@@ -269,32 +273,18 @@ fn parse_etherframe<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<PacketHeader, ser
     }
 }
 
-fn dissect_new<'a>(cursor: &mut Cursor<&'a [u8]>){
-    let result = serial::EntityAddr::read_from_wire(cursor);
-    if result.is_ok(){
-        //println!("New? {:?}", result);
-    }
-}
-
-fn check_for_connect<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<(),String>{
-    let mut banner_vec:Vec<u8> = Vec::new();
-    for _ in 0..8{
-        let b = try!(cursor.read_u8().map_err(|e| e.to_string()));
-        banner_vec.push(b);
-    }
-    let s = try!(String::from_utf8(banner_vec).map_err(|e| e.to_string()));
-    println!("Ceph connect: {}", s);
-    return Ok(());
-}
-
 fn get_time()->u64{
     let now = time::now();
     let milliseconds_since_epoch = now.to_timespec().sec * 1000;
     return milliseconds_since_epoch as u64;
 }
 
-fn log_packet_to_graphite(server: &str, port: u16, data: &str)->Result<(), String>{
-    //Graphite is plaintext
+fn log_to_stdout(){
+
+}
+
+fn log_packet_to_carbon(server: &str, port: u16, data: String)->Result<(), String>{
+    //Carbon is plaintext
     //echo "local.random.diceroll 4 `date +%s`" | nc -q0 ${SERVER} ${PORT}
 
     let mut stream = try!(TcpStream::connect((server, port)).map_err(|e| e.to_string()));
@@ -318,62 +308,83 @@ fn log_packet_to_es(url: &str, json: &String)->Result<(), String>{
     };
 }
 
-fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg)->Result<(),String>{
+fn parse_carbon_url(url: &String)->Result<(String, u16), String>{
+    let parts: Vec<&str> = url.split(":").collect();
+    if parts.len() == 2{
+        let carbon_host = parts[0].to_string();
+        let carbon_port = try!(u16::from_str(parts[1]).map_err(|e| e.to_string()));
+        return Ok((carbon_host, carbon_port));
+    }else{
+        return Err("Invalid carbon host specification.  See CLI example".to_string());
+    }
+}
+
+fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     //Process OSD operation packets
     match msg.msg{
         //Client -> OSD operation
         serial::Message::OsdOp(osd_op) => {
             //Grab the current time to send along
-            let now = time::now();
-            let time_spec = now.to_timespec();
-            let milliseconds_since_epoch = get_time();
+            if output_args.carbon.is_some(){
+                let now = time::now();
+                let time_spec = now.to_timespec();
+                let carbon_url = output_args.carbon.clone().unwrap();
+                let (carbon_host, carbon_port) = try!(parse_carbon_url(&carbon_url));
+                let graphite_data = format!("ceph.{}.{:?}.{} {}",
+                    &header.src_v4addr.unwrap(),
+                    &osd_op.flags,
+                    &osd_op.operation.size,
+                    time_spec.sec);
+                try!(log_packet_to_carbon(&carbon_host, carbon_port, graphite_data));
+            }
 
-            let graphite_data = format!("ceph.{}.{:?}.{} {}",
-                &header.src_v4addr.unwrap(),
-                &osd_op.flags,
-                &osd_op.operation.size,
-                time_spec.sec);
-            println!("Graphite data: {}", &graphite_data);
-
-            let doc = Document{
-                header: header,
-                flags: osd_op.flags,
-                operation_count: osd_op.operation_count,
-                size: osd_op.operation.size,
-                timestamp: milliseconds_since_epoch,
-            };
-            let doc_json = try!(doc.to_json());
-            try!(log_packet_to_es("http://10.0.3.144:9200/ceph/operations", &doc_json));
-            try!(log_packet_to_graphite("10.0.3.144", 2003, &graphite_data));
+            if output_args.elasticsearch.is_some(){
+                let milliseconds_since_epoch = get_time();
+                let doc = Document{
+                    header: header,
+                    flags: osd_op.flags,
+                    operation_count: osd_op.operation_count,
+                    size: osd_op.operation.size,
+                    timestamp: milliseconds_since_epoch,
+                };
+                let doc_json = try!(doc.to_json());
+                //It's ok to unwrap here because we checked is_some() above
+                try!(log_packet_to_es(&output_args.elasticsearch.clone().unwrap(), &doc_json));
+            }
             return Ok(());
         },
         //Osd <-> Osd operation
         serial::Message::OsdSubop(sub_op) => {
-            let now = time::now();
-            let time_spec = now.to_timespec();
-            let milliseconds_since_epoch = get_time();
+            if output_args.carbon.is_some(){
+                let now = time::now();
+                let time_spec = now.to_timespec();
+                let carbon_url = output_args.carbon.clone().unwrap();
+                let (carbon_host, carbon_port) = try!(parse_carbon_url(&carbon_url));
 
-            let graphite_data = format!("ceph.{}.{:?}.{} {}",
-                &header.src_v4addr.unwrap(),
-                &sub_op.flags,
-                &sub_op.operation.size,
-                time_spec.sec);
-            println!("Graphite data: {}", &graphite_data);
+                let graphite_data = format!("ceph.{}.{:?}.{} {}",
+                    &header.src_v4addr.unwrap(),
+                    &sub_op.flags,
+                    &sub_op.operation.size,
+                    time_spec.sec);
+                try!(log_packet_to_carbon(&carbon_host, carbon_port, graphite_data));
+            }
 
-            let es_doc = Document{
-                header: header,
-                flags: sub_op.flags,
-                operation_count: sub_op.operation_count,
-                size: sub_op.operation.size,
-                timestamp: milliseconds_since_epoch,
-            };
-            let doc_json = try!(es_doc.to_json());
-
-            let graphite_data = format!("");
-            try!(log_packet_to_es("http://10.0.3.144:9200/ceph/operations", &doc_json));
-            try!(log_packet_to_graphite("10.0.3.144", 2003, &graphite_data));
+            if output_args.elasticsearch.is_some(){
+                let milliseconds_since_epoch = get_time();
+                let doc = Document{
+                    header: header,
+                    flags: sub_op.flags,
+                    operation_count: sub_op.operation_count,
+                    size: sub_op.operation.size,
+                    timestamp: milliseconds_since_epoch,
+                };
+                let doc_json = try!(doc.to_json());
+                //It's ok to unwrap here because we checked is_some() above
+                try!(log_packet_to_es(&output_args.elasticsearch.clone().unwrap(), &doc_json));
+            }
             return Ok(());
         },
+        //TODO: Add more operation parsing results here
         _=> {
             return Ok(());
         }
@@ -382,23 +393,6 @@ fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg)->Result<(),Str
 
 //MSGR is Ceph's outer message protocol
 fn dissect_msgr<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<serial::CephMsgrMsg, serial::SerialError>{
-    let tag_bytes = try!(cursor.read_u8());
-    if tag_bytes == 63 {
-        //This might be a Ceph banner message
-        println!("check_for_connect");
-        check_for_connect(cursor);
-    }
-
-    if tag_bytes == 0{
-        //println!("dissect_new");
-        dissect_new(cursor);
-    }
-
-    //Rewind and let CephMsgrMsg figure it out
-    //println!("Packet: {:?}", &cursor);
-    let current_pos = cursor.position();
-    //println!("backing up 1 byte");
-    cursor.set_position(current_pos - 1); //Back up by 1 byte
     let result = try!(serial::CephMsgrMsg::read_from_wire(cursor));
     return Ok(result);
 }
@@ -410,8 +404,7 @@ fn main() {
             return;
         }
     };
-
-    let device = get_device();
+    let args = get_arguments();
 
     let dev_list = match Device::list(){
         Ok(l) => l,
@@ -423,8 +416,8 @@ fn main() {
 
     println!("Validating network device");
     for dev_device in dev_list{
-        if dev_device.name == device{
-            println!("Found Network device: {:?}", device);
+        if dev_device.name == "any"{
+            println!("Found Network device");
             println!("Setting up capture");
             let mut cap = Capture::from_device(dev_device).unwrap() //open the device
                           .promisc(true)
@@ -443,20 +436,19 @@ fn main() {
                     return;
                 }
             }
-            println!("Datalinks supported: {:?}", cap.list_datalinks().unwrap());
-            println!("Current LinkType: {:?}", cap.get_datalink());
-
             println!("Waiting for packets");
             //Grab some packets :)
             while let Some(packet) = cap.next() {
                 let data = packet.data;
                 let mut cursor = Cursor::new(&data[..]);
                 let packet_header = parse_etherframe(&mut cursor);
+
+                //Only try to parse Ceph Msgr packets.  The others don't really matter at the moment
                 let result = dissect_msgr(&mut cursor);
                 if result.is_ok(){
                     if packet_header.is_ok(){
                         let p = packet_header.unwrap();
-                        let print_result = process_packet(p, result.unwrap());
+                        let print_result = process_packet(p, result.unwrap(), &args);
                     }
                 }
             }

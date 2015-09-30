@@ -3,11 +3,6 @@ version: 0.1.0
 author: Chris Holcombe, chris.holcombe@canonical.com
 about: Analyzes Ceph in real time
 args:
-    - NET:
-        short: i
-        long: interface
-        help: The network device to monitor Ceph traffic on
-        takes_value: true
     - CARBON:
         short: c
         long: carbon

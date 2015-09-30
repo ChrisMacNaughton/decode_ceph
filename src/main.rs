@@ -96,7 +96,6 @@ mod tests{
 
 #[derive(Debug)]
 struct Args {
-    interface: String,
     carbon: String,
     elasticsearch: String,
     stdout: String,
@@ -104,9 +103,8 @@ struct Args {
 }
 
 impl Args {
-    fn new(interface: &str, carbon: &str, elasticsearch: &str, stdout: &str, outputs: Vec<String>) -> Args {
+    fn new(carbon: &str, elasticsearch: &str, stdout: &str, outputs: Vec<String>) -> Args {
         Args {
-            interface: interface.to_string(),
             carbon: carbon.to_string(),
             elasticsearch: elasticsearch.to_string(),
             stdout: stdout.to_string(),
@@ -130,7 +128,6 @@ fn get_arguments() -> Args{
         }
     }
     Args::new(
-        matches.value_of("NET").unwrap_or(""),
         matches.value_of("CARBON").unwrap_or("127.0.0.1:2003"),
         matches.value_of("ES").unwrap_or("127.0.0.1:9300"),
         matches.value_of("STDOUT").unwrap_or("."),
@@ -138,13 +135,13 @@ fn get_arguments() -> Args{
     )
 }
 
-fn get_device()->String{
-    let output_types = ["elastic_search", "graphite", "stdout"];
-    let args = get_arguments();
+// fn get_device()->String{
+//     let output_types = ["elastic_search", "graphite", "stdout"];
+//     let args = get_arguments();
 
-    let device  = args.interface;
-    return device.to_string();
-}
+//     let device  = args.interface;
+//     return device.to_string();
+// }
 
 fn check_user()->Result<(), ()>{
     let current_user = users::get_current_uid();
@@ -428,7 +425,7 @@ fn main() {
         }
     };
 
-    let device = get_device();
+    // let device = get_device();
 
     let dev_list = match Device::list(){
         Ok(l) => l,
@@ -440,8 +437,8 @@ fn main() {
 
     println!("Validating network device");
     for dev_device in dev_list{
-        if dev_device.name == device{
-            println!("Found Network device: {:?}", device);
+        if dev_device.name == "any"{
+            println!("Found Network device");
             println!("Setting up capture");
             let mut cap = Capture::from_device(dev_device).unwrap() //open the device
                           .promisc(true)

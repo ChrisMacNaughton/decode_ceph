@@ -6,10 +6,10 @@ args:
     - CARBON:
         short: c
         long: carbon
-        help: Graphite / Carbon configuration. Example: localhost:2003
+        help: Graphite / Carbon configuration. Example localhost:2003
         takes_value: true
     - ES:
-        help: ElasticSerch configuration. Example: http://localhost:9200/ceph/operations
+        help: ElasticSerch configuration. Example http://localhost:9200/ceph/operations
         short: e
         long: elasticsearch
         takes_value: true

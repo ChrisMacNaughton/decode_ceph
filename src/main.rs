@@ -462,15 +462,17 @@ fn main() {
 
             println!("Waiting for packets");
             //Grab some packets :)
-            while let Some(packet) = cap.next() {
-                let data = packet.data;
-                let mut cursor = Cursor::new(&data[..]);
-                let packet_header = parse_etherframe(&mut cursor);
-                let result = dissect_msgr(&mut cursor);
-                if result.is_ok(){
-                    if packet_header.is_ok(){
-                        let p = packet_header.unwrap();
-                        let print_result = process_packet(p, result.unwrap());
+            loop {
+                while let Some(packet) = cap.next() {
+                    let data = packet.data;
+                    let mut cursor = Cursor::new(&data[..]);
+                    let packet_header = parse_etherframe(&mut cursor);
+                    let result = dissect_msgr(&mut cursor);
+                    if result.is_ok(){
+                        if packet_header.is_ok(){
+                            let p = packet_header.unwrap();
+                            let print_result = process_packet(p, result.unwrap());
+                        }
                     }
                 }
             }

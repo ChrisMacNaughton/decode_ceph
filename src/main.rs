@@ -14,7 +14,7 @@ use serial::{CephPrimitive};
 mod crypto;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use clap::{App, Arg};
+use clap::App;
 use pcap::{Capture, Device};
 
 use std::io::Cursor;
@@ -115,16 +115,6 @@ fn get_arguments() -> Args{
     let yaml = load_yaml!("cli.yaml");
     let matches = App::from_yaml(yaml).get_matches();
     let mut outputs:Vec<String> = Vec::new();
-
-    if let Some(ref out) = matches.values_of("OUTPUTS") {
-        for output in out.iter() {
-            if output_types.contains(output) {
-                outputs.push(output.to_string());
-            } else {
-                println!("{} is not a valid output type", output);
-            }
-        }
-    }
 
     return Args{
         carbon: parse_option("CARBON", &matches),
@@ -288,7 +278,8 @@ fn log_packet_to_carbon(server: &str, port: u16, data: String)->Result<(), Strin
     //echo "local.random.diceroll 4 `date +%s`" | nc -q0 ${SERVER} ${PORT}
 
     let mut stream = try!(TcpStream::connect((server, port)).map_err(|e| e.to_string()));
-    let _ = stream.write(&[1]);
+    let bytes_written = try!(stream.write(&data.into_bytes()[..]).map_err(|e| e.to_string()));
+    println!("Wrote: {} bytes to graphite", &bytes_written);
 
     return Ok(());
 }

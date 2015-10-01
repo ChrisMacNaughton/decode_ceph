@@ -1,12 +1,12 @@
 [package]
 name = "decode_ceph"
 version = "0.1.0"
-authors = ["Chris Holcombe <xfactor973@gmail.com>"]
+authors = ["Chris Holcombe <xfactor973@gmail.com>", "Chris MacNaughton <chmacnaughton@gmail.com>"]
 
 [dependencies]
 bitflags = "*"
 byteorder = "*"
-clap = { features = ["yaml"] }
+clap = {version = "*", features = ["yaml"]}
 crc = "*"
 ease = "*"
 enum_primitive = "*"

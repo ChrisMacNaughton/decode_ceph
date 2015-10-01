@@ -413,7 +413,7 @@ fn main() {
             let mut cap = Capture::from_device(dev_device).unwrap() //open the device
                           .promisc(true)
                           //.snaplen(500)
-                          .timeout(60000) //60 seconds
+                          .timeout(50) 
                           .open() //activate the handle
                           .unwrap(); //assume activation worked
             println!("Setting up filter");
@@ -429,17 +429,17 @@ fn main() {
             }
             println!("Waiting for packets");
             //Grab some packets :)
-            while let Some(packet) = cap.next() {
-                let data = packet.data;
-                let mut cursor = Cursor::new(&data[..]);
-                let packet_header = parse_etherframe(&mut cursor);
-
-                //Only try to parse Ceph Msgr packets.  The others don't really matter at the moment
-                let result = dissect_msgr(&mut cursor);
-                if result.is_ok(){
-                    if packet_header.is_ok(){
-                        let p = packet_header.unwrap();
-                        let print_result = process_packet(p, result.unwrap(), &args);
+            loop {
+                while let Some(packet) = cap.next() {
+                    let data = packet.data;
+                    let mut cursor = Cursor::new(&data[..]);
+                    let packet_header = parse_etherframe(&mut cursor);
+                    let result = dissect_msgr(&mut cursor);
+                    if result.is_ok(){
+                        if packet_header.is_ok(){
+                            let p = packet_header.unwrap();
+                            let print_result = process_packet(p, result.unwrap());
+                        }
                     }
                 }
             }

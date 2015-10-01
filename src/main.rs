@@ -405,6 +405,9 @@ fn main() {
         }
     };
     let args = get_arguments();
+    for output in &args.outputs {
+        println!("Logging to {}", output);
+    }
 
     let dev_list = match Device::list(){
         Ok(l) => l,

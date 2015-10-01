@@ -116,6 +116,15 @@ fn get_arguments() -> Args{
     let matches = App::from_yaml(yaml).get_matches();
     let mut outputs:Vec<String> = Vec::new();
 
+    if let Some(ref out) = matches.values_of("OUTPUTS") {
+        for output in out.iter() {
+            if output_types.contains(output) {
+                outputs.push(output.to_string());
+            } else {
+                println!("{} is not a valid output type", output);
+            }
+        }
+    }
     return Args{
         carbon: parse_option("CARBON", &matches),
         elasticsearch: parse_option("ES", &matches),
@@ -396,6 +405,9 @@ fn main() {
         }
     };
     let args = get_arguments();
+    for output in &args.outputs {
+        println!("Logging to {}", output);
+    }
 
     let dev_list = match Device::list(){
         Ok(l) => l,

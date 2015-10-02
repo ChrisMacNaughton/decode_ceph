@@ -125,6 +125,37 @@ fn parse_option<'a, 'b>(option: &str, matches: &clap::ArgMatches<'a, 'b>) -> Opt
 }
 
 fn get_arguments() -> Args{
+    let cli_args = get_cli_arguments();
+    // let config = match get_config {
+    //     Some(conf) => conf,
+    //     None => Args{},
+    // };
+    // return Args {
+    //     carbon: match cli_args.carbon {
+    //         Some(c) => c,
+    //         None
+    //     elasticsearch: parse_option("ES", &matches),
+    //     stdout: parse_option("STDOUT", &matches),
+    //     config_path: match parse_option("CONFIG", &matches) {
+    //         Some(path) => path,
+    //         None => "/etc/defaults/decode_ceph.yaml".to_string(),
+    //     },
+    //     outputs: outputs,
+    // }
+    // let _ = match get_config(){
+    //     Some(c) => c,
+    //     Err(_) => &cli_args,
+    // };
+    let config = match get_config() {
+        Ok(a) => a,
+        Err(_) => Args::clean(),
+    };
+    println!("args: {:?}", cli_args);
+    println!("config: {:?}", config);
+    return cli_args;
+}
+
+fn get_cli_arguments() -> Args{
     let output_types = vec!["elastic_search", "carbon", "stdout"];
     let yaml = load_yaml!("cli.yaml");
     let matches = App::from_yaml(yaml).get_matches();

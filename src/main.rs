@@ -8,7 +8,7 @@ extern crate num;
 extern crate pcap;
 extern crate users;
 extern crate time;
-
+extern crate yaml_rust;
 mod serial;
 use serial::{CephPrimitive};
 mod crypto;
@@ -21,7 +21,8 @@ use std::io::Cursor;
 use std::io::prelude::*;
 use std::net::{Ipv4Addr, Ipv6Addr, TcpStream};
 use std::str::FromStr;
-
+use std::fs::File;
+use yaml_rust::{Yaml, YamlLoader};
 #[cfg(test)]
 mod tests{
     use std::io::Cursor;

@@ -4,7 +4,7 @@ author: Chris Holcombe, chris.holcombe@canonical.com
 about: Analyzes Ceph in real time
 args:
     - CARBON:
-        short: c
+        short: g
         long: carbon
         help: Graphite / Carbon configuration. Example localhost:2003
         takes_value: true
@@ -28,3 +28,8 @@ args:
             - elastic_search
             - carbon
             - stdout
+    - CONFIG:
+        help: location of the yaml file to use for configuration
+        short: c
+        long: config
+        takes_value: true

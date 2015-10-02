@@ -97,7 +97,8 @@ pub struct AuthCapsInfo {
 impl serial::CephPrimitive for AuthCapsInfo{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, serial::SerialError>{
         //Struct Version
-        let struct_version = try!(cursor.read_u8());
+        // let struct_version = try!(cursor.read_u8());
+        let _ = try!(cursor.read_u8());
 
         let allow_all = try!(cursor.read_u8());
         let caps_len = try!(cursor.read_u32::<LittleEndian>());
@@ -186,7 +187,8 @@ impl AuthTicket{
 impl serial::CephPrimitive for AuthTicket{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, serial::SerialError>{
         //Struct Version
-        let struct_version = try!(cursor.read_u8());
+        // let struct_version = try!(cursor.read_u8());
+        let _ = try!(cursor.read_u8());
         let name = serial::CephEntity::from_u8(try!(cursor.read_u8()));
 
         let global_id = try!(cursor.read_u64::<LittleEndian>());

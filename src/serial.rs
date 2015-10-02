@@ -5,7 +5,7 @@ extern crate time;
 
 //Crates
 use self::byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
-use self::crc::{crc32, Hasher32};
+use self::crc::Hasher32;
 use self::num::FromPrimitive;
 
 //Std libs
@@ -1432,7 +1432,7 @@ impl CephPrimitive for CephMsgHeader{
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-        let mut digest = crc32::Digest::new(crc32::IEEE);
+        // let mut digest = crc32::Digest::new(crc32::IEEE);
 
         let mut buffer:Vec<u8> = Vec::new();
         try!(buffer.write_u64::<LittleEndian>(self.sequence_num));
@@ -1795,6 +1795,6 @@ fn send_msg(socket: &mut TcpStream, msg: Message)->Result<usize, SerialError>{
 }
 
 //TODO: What should this do?
-fn recv_msg(socket: &mut TcpStream){
+// fn recv_msg(socket: &mut TcpStream){
 
-}
+// }

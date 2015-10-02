@@ -102,6 +102,19 @@ struct Args {
     elasticsearch: Option<String>,
     stdout: Option<String>,
     outputs: Vec<String>,
+    config_path: String
+}
+
+impl Args {
+    fn clean() -> Args {
+        Args {
+            carbon: None,
+            elasticsearch: None,
+            stdout: None,
+            outputs: Vec::new(),
+            config_path: "".to_string()
+        }
+    }
 }
 
 fn parse_option<'a, 'b>(option: &str, matches: &clap::ArgMatches<'a, 'b>) -> Option<String>{
@@ -130,8 +143,63 @@ fn get_arguments() -> Args{
         carbon: parse_option("CARBON", &matches),
         elasticsearch: parse_option("ES", &matches),
         stdout: parse_option("STDOUT", &matches),
+        config_path: match parse_option("CONFIG", &matches) {
+            Some(path) => path,
+            None => "/etc/defaults/decode_ceph.yaml".to_string(),
+        },
         outputs: outputs,
     };
+}
+
+fn get_config() -> Result<Args, String>{
+    let config_file = get_cli_arguments().config_path;
+    let mut f = try!(File::open(config_file).map_err(|e| e.to_string()));
+
+    let mut s = String::new();
+    try!(f.read_to_string(&mut s).map_err(|e| e.to_string()));
+
+    //Remove this hack when the new version of yaml_rust releases to get the real error msg
+    let docs = match YamlLoader::load_from_str(&s){
+        Ok(data) => data,
+        Err(_) => {
+            return Err("Unable to load yaml data from config file".to_string());
+        }
+    };
+
+    let doc = &docs[0];
+
+    let carbon: Option<String> = match doc["carbon"].as_str() {
+        Some(o) => Some(o.to_string()),
+        None => None
+    };
+    let elasticsearch: Option<String> = match doc["elasticsearch"].as_str() {
+        Some(o) => Some(o.to_string()),
+        None => None
+    };
+    let stdout: Option<String> = match doc["stdout"].as_str() {
+        Some(o) => Some(o.to_string()),
+        None => None
+    };
+
+    let outputs: Vec<String> = match doc["outputs"].as_vec() {
+        Some(o) => {
+            o.iter().map( |x|
+                match x.as_str() {
+                    Some(o) => o.to_string(),
+                    None => "".to_string(),
+                }
+            ).collect()
+        },
+        None => Vec::new(),
+    };
+
+    return Ok(Args {
+        carbon: carbon,
+        elasticsearch: elasticsearch,
+        stdout: stdout,
+        config_path: "/etc/defaults/decode_ceph.yaml".to_string(),
+        outputs: outputs,
+    })
 }
 
 fn check_user()->Result<(), ()>{

@@ -182,6 +182,23 @@ fn get_cli_arguments() -> Args{
     };
 }
 
+
+macro_rules! parse_opt (
+    ($name:ident, $doc:expr) => (
+
+    let $name: Option<String> = match $doc["$name"].as_str() {
+        Some(o) => Some(o.to_string()),
+        None => None
+    }
+// pub fn $name(&self) -> Option<$t> {
+//     match *self {
+//         Yaml::$yt(ref v) => Some(v),
+//         _ => None
+//     }
+// }
+    );
+);
+
 fn get_config() -> Result<Args, String>{
     let config_file = get_cli_arguments().config_path;
     let mut f = try!(File::open(config_file).map_err(|e| e.to_string()));
@@ -198,19 +215,21 @@ fn get_config() -> Result<Args, String>{
     };
 
     let doc = &docs[0];
-
-    let carbon: Option<String> = match doc["carbon"].as_str() {
-        Some(o) => Some(o.to_string()),
-        None => None
-    };
-    let elasticsearch: Option<String> = match doc["elasticsearch"].as_str() {
-        Some(o) => Some(o.to_string()),
-        None => None
-    };
-    let stdout: Option<String> = match doc["stdout"].as_str() {
-        Some(o) => Some(o.to_string()),
-        None => None
-    };
+    parse_opt!(carbon, doc);
+    parse_opt!(elasticsearch, doc);
+    parse_opt!(stdout, doc);
+    // let carbon: Option<String> = match doc["carbon"].as_str() {
+    //     Some(o) => Some(o.to_string()),
+    //     None => None
+    // };
+    // let elasticsearch: Option<String> = match doc["elasticsearch"].as_str() {
+    //     Some(o) => Some(o.to_string()),
+    //     None => None
+    // };
+    // let stdout: Option<String> = match doc["stdout"].as_str() {
+    //     Some(o) => Some(o.to_string()),
+    //     None => None
+    // };
 
     let outputs: Vec<String> = match doc["outputs"].as_vec() {
         Some(o) => {

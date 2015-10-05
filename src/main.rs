@@ -204,7 +204,7 @@ fn get_cli_arguments() -> Args{
         stdout: parse_option("STDOUT", &matches),
         config_path: match parse_option("CONFIG", &matches) {
             Some(path) => path,
-            None => "/etc/defaults/decode_ceph.yaml".to_string(),
+            None => "/etc/default/decode_ceph.yaml".to_string(),
         },
         outputs: outputs,
     };
@@ -256,7 +256,7 @@ fn get_config() -> Result<Args, String>{
         carbon: carbon,
         elasticsearch: elasticsearch,
         stdout: stdout,
-        config_path: "/etc/defaults/decode_ceph.yaml".to_string(),
+        config_path: "/etc/default/decode_ceph.yaml".to_string(),
         outputs: outputs,
     })
 }

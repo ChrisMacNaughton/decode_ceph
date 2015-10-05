@@ -143,8 +143,8 @@ fn get_arguments() -> Args{
         Ok(a) => a,
         Err(_) => Args::clean(),
     };
-    println!("args: {:?}", cli_args);
-    println!("config: {:?}", config);
+    // println!("args: {:?}", cli_args);
+    // println!("config: {:?}", config);
 
     let carbon = match cli_args.carbon {
         Some(c) => Some(c),
@@ -554,6 +554,7 @@ fn main() {
         }
     };
     let args = get_arguments();
+    // println!("{:?}", args);
     for output in &args.outputs {
         println!("Logging to {}", output);
     }

@@ -565,7 +565,7 @@ fn main() {
         }
     };
     let args = get_arguments();
-    println!("{:?}", args);
+    // println!("{:?}", args);
     for output in &args.outputs {
         println!("Logging to {}", output);
     }

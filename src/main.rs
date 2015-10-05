@@ -8,6 +8,7 @@ extern crate ease;
 extern crate num;
 extern crate pcap;
 extern crate users;
+extern crate simple_logger;
 extern crate time;
 extern crate yaml_rust;
 mod serial;
@@ -16,6 +17,7 @@ mod crypto;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use clap::App;
+use log::LogLevel;
 use pcap::{Capture, Device};
 
 use std::io::Cursor;
@@ -97,6 +99,15 @@ mod tests{
     }
 }
 
+macro_rules! parse_opt (
+    ($name:ident, $doc:expr) => (
+    let $name: Option<String> = match $doc.as_str() {
+        Some(o) => Some(o.to_string()),
+        None => None
+    }
+    );
+);
+
 #[derive(Debug)]
 struct Args {
     carbon: Option<String>,
@@ -116,159 +127,6 @@ impl Args {
             config_path: "".to_string()
         }
     }
-}
-
-fn get_arguments() -> Args{
-    let cli_args = get_cli_arguments();
-    let config = match get_config() {
-        Ok(a) => a,
-        Err(_) => Args::clean(),
-    };
-    debug!("args: {:?}", cli_args);
-    debug!("config: {:?}", config);
-
-    let carbon = match cli_args.carbon {
-        Some(c) => Some(c),
-        None => match config.carbon {
-            Some(c) => Some(c),
-            None => None,
-        },
-    };
-    let elasticsearch = match cli_args.elasticsearch {
-        Some(c) => Some(c),
-        None => match config.elasticsearch {
-            Some(c) => Some(c),
-            None => None,
-        },
-    };
-    let stdout = match cli_args.stdout {
-        Some(c) => Some(c),
-        None => match config.stdout {
-            Some(c) => Some(c),
-            None => None,
-        },
-    };
-    let outputs = match cli_args.outputs.len() {
-        0 => match config.outputs.len() {
-            0 => Some(Vec::new()),
-            _ => Some(config.outputs),
-        },
-        _ => Some(cli_args.outputs),
-    };
-
-    let output_types = vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()];
-    let mut final_outputs:Vec<String> = Vec::new();
-    if let Some(ref out) = outputs {
-        for output in out.iter() {
-            if output_types.contains(output) {
-                final_outputs.push(output.clone());
-            } else {
-                println!("{} is not a valid output type", output);
-            }
-        }
-    }
-
-    Args{
-        carbon: carbon,
-        elasticsearch: elasticsearch,
-        stdout: stdout,
-        outputs: final_outputs,
-        config_path: cli_args.config_path,
-    }
-}
-
-fn parse_option<'a, 'b>(option: &str, matches: &clap::ArgMatches<'a, 'b>) -> Option<String>{
-    match matches.value_of(option){
-        Some(opt) => Some(opt.to_string()),
-        None => None,
-    }
-}
-
-fn get_cli_arguments() -> Args{
-    let output_types = vec!["elasticsearch", "carbon", "stdout"];
-    let yaml = load_yaml!("cli.yaml");
-    let matches = App::from_yaml(yaml).get_matches();
-    let mut outputs:Vec<String> = Vec::new();
-
-    if let Some(ref out) = matches.values_of("OUTPUTS") {
-        for output in out.iter() {
-            if output_types.contains(output) {
-                outputs.push(output.to_string());
-            } else {
-                println!("{} is not a valid output type", output);
-            }
-        }
-    }
-    return Args{
-        carbon: parse_option("CARBON", &matches),
-        elasticsearch: parse_option("ES", &matches),
-        stdout: parse_option("STDOUT", &matches),
-        config_path: match parse_option("CONFIG", &matches) {
-            Some(path) => path,
-            None => "/etc/default/decode_ceph.yaml".to_string(),
-        },
-        outputs: outputs,
-    };
-}
-
-
-macro_rules! parse_opt (
-    ($name:ident, $doc:expr) => (
-    let $name: Option<String> = match $doc.as_str() {
-        Some(o) => Some(o.to_string()),
-        None => None
-    }
-    );
-);
-
-fn get_config() -> Result<Args, String>{
-    let config_file = get_cli_arguments().config_path;
-    let mut f = try!(File::open(config_file).map_err(|e| e.to_string()));
-
-    let mut s = String::new();
-    try!(f.read_to_string(&mut s).map_err(|e| e.to_string()));
-
-    //Remove this hack when the new version of yaml_rust releases to get the real error msg
-    let docs = match YamlLoader::load_from_str(&s){
-        Ok(data) => data,
-        Err(_) => {
-            return Err("Unable to load yaml data from config file".to_string());
-        }
-    };
-
-    let doc = &docs[0];
-    parse_opt!(carbon, doc["carbon"]);
-    parse_opt!(elasticsearch, doc["elasticsearch"]);
-    parse_opt!(stdout, doc["stdout"]);
-
-    let outputs: Vec<String> = match doc["outputs"].as_vec() {
-        Some(o) => {
-            o.iter().map( |x|
-                match x.as_str() {
-                    Some(o) => o.to_string(),
-                    None => "".to_string(),
-                }
-            ).collect()
-        },
-        None => Vec::new(),
-    };
-
-    return Ok(Args {
-        carbon: carbon,
-        elasticsearch: elasticsearch,
-        stdout: stdout,
-        config_path: "/etc/default/decode_ceph.yaml".to_string(),
-        outputs: outputs,
-    })
-}
-
-fn check_user()->Result<(), ()>{
-    let current_user = users::get_current_uid();
-    if current_user != 0 {
-        println!("This program must be run by root to access the network devices");
-        return Err(());
-    }
-    return Ok(());
 }
 
 #[derive(Debug)]
@@ -317,6 +175,149 @@ pub struct PacketHeader{
 
     pub src_v6addr: Option<Ipv6Addr>,
     pub dst_v6addr: Option<Ipv6Addr>,
+}
+
+fn get_arguments() -> Args{
+    let cli_args = get_cli_arguments();
+    let config = match get_config() {
+        Ok(a) => a,
+        Err(_) => Args::clean(),
+    };
+    debug!("args: {:?}", cli_args);
+    debug!("config: {:?}", config);
+
+    let carbon = match cli_args.carbon {
+        Some(c) => Some(c),
+        None => match config.carbon {
+            Some(c) => Some(c),
+            None => None,
+        },
+    };
+    let elasticsearch = match cli_args.elasticsearch {
+        Some(c) => Some(c),
+        None => match config.elasticsearch {
+            Some(c) => Some(c),
+            None => None,
+        },
+    };
+    let stdout = match cli_args.stdout {
+        Some(c) => Some(c),
+        None => match config.stdout {
+            Some(c) => Some(c),
+            None => None,
+        },
+    };
+    let outputs = match cli_args.outputs.len() {
+        0 => match config.outputs.len() {
+            0 => Some(Vec::new()),
+            _ => Some(config.outputs),
+        },
+        _ => Some(cli_args.outputs),
+    };
+
+    let output_types = vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()];
+    let mut final_outputs:Vec<String> = Vec::new();
+    if let Some(ref out) = outputs {
+        for output in out.iter() {
+            if output_types.contains(output) {
+                final_outputs.push(output.clone());
+            } else {
+                error!("{} is not a valid output type", output);
+            }
+        }
+    }
+
+    Args{
+        carbon: carbon,
+        elasticsearch: elasticsearch,
+        stdout: stdout,
+        outputs: final_outputs,
+        config_path: cli_args.config_path,
+    }
+}
+
+fn parse_option<'a, 'b>(option: &str, matches: &clap::ArgMatches<'a, 'b>) -> Option<String>{
+    match matches.value_of(option){
+        Some(opt) => Some(opt.to_string()),
+        None => None,
+    }
+}
+
+fn get_cli_arguments() -> Args{
+    let output_types = vec!["elasticsearch", "carbon", "stdout"];
+    let yaml = load_yaml!("cli.yaml");
+    let matches = App::from_yaml(yaml).get_matches();
+    let mut outputs:Vec<String> = Vec::new();
+
+    if let Some(ref out) = matches.values_of("OUTPUTS") {
+        for output in out.iter() {
+            if output_types.contains(output) {
+                outputs.push(output.to_string());
+            } else {
+                error!("{} is not a valid output type", output);
+            }
+        }
+    }
+    return Args{
+        carbon: parse_option("CARBON", &matches),
+        elasticsearch: parse_option("ES", &matches),
+        stdout: parse_option("STDOUT", &matches),
+        config_path: match parse_option("CONFIG", &matches) {
+            Some(path) => path,
+            None => "/etc/default/decode_ceph.yaml".to_string(),
+        },
+        outputs: outputs,
+    };
+}
+
+fn get_config() -> Result<Args, String>{
+    let config_file = get_cli_arguments().config_path;
+    let mut f = try!(File::open(config_file).map_err(|e| e.to_string()));
+
+    let mut s = String::new();
+    try!(f.read_to_string(&mut s).map_err(|e| e.to_string()));
+
+    //Remove this hack when the new version of yaml_rust releases to get the real error msg
+    let docs = match YamlLoader::load_from_str(&s){
+        Ok(data) => data,
+        Err(_) => {
+            return Err("Unable to load yaml data from config file".to_string());
+        }
+    };
+
+    let doc = &docs[0];
+    parse_opt!(carbon, doc["carbon"]);
+    parse_opt!(elasticsearch, doc["elasticsearch"]);
+    parse_opt!(stdout, doc["stdout"]);
+
+    let outputs: Vec<String> = match doc["outputs"].as_vec() {
+        Some(o) => {
+            o.iter().map( |x|
+                match x.as_str() {
+                    Some(o) => o.to_string(),
+                    None => "".to_string(),
+                }
+            ).collect()
+        },
+        None => Vec::new(),
+    };
+
+    return Ok(Args {
+        carbon: carbon,
+        elasticsearch: elasticsearch,
+        stdout: stdout,
+        config_path: "/etc/default/decode_ceph.yaml".to_string(),
+        outputs: outputs,
+    })
+}
+
+fn check_user()->Result<(), ()>{
+    let current_user = users::get_current_uid();
+    if current_user != 0 {
+        error!("This program must be run by root to access the network devices");
+        return Err(());
+    }
+    return Ok(());
 }
 
 fn read_v4ip<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<Ipv4Addr, serial::SerialError>{
@@ -529,6 +530,9 @@ fn dissect_msgr<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<serial::CephMsgrMsg, 
 }
 
 fn main() {
+    //TODO make configurable via cli or config arg
+    simple_logger::init_with_level(LogLevel::Debug).unwrap();
+
     match check_user(){
         Ok(_) => {},
         Err(_) =>{
@@ -548,7 +552,7 @@ fn main() {
         }
     };
 
-    println!("Validating network device");
+    info!("Validating network device");
     for dev_device in dev_list{
         if dev_device.name == "any"{
             info!("Found Network device");
@@ -570,7 +574,7 @@ fn main() {
                     return;
                 }
             }
-            println!("Waiting for packets");
+            info!("Waiting for packets");
             //Grab some packets :)
             loop {
                 match cap.next(){

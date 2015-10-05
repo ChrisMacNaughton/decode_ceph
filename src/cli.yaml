@@ -25,7 +25,7 @@ args:
         multiple: true
         takes_value: true
         possible_values:
-            - elastic_search
+            - elasticsearch
             - carbon
             - stdout
     - CONFIG:

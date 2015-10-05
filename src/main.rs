@@ -169,17 +169,29 @@ fn get_arguments() -> Args{
     };
     let outputs = match cli_args.outputs.len() {
         0 => match config.outputs.len() {
-            0 => Vec::new(),
-            _ => config.outputs,
+            0 => Some(Vec::new()),
+            _ => Some(config.outputs),
         },
-        _ => cli_args.outputs,
+        _ => Some(cli_args.outputs),
     };
+
+    let output_types = vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()];
+    let mut final_outputs:Vec<String> = Vec::new();
+    if let Some(ref out) = outputs {
+        for output in out.iter() {
+            if output_types.contains(output) {
+                final_outputs.push(output.clone());
+            } else {
+                println!("{} is not a valid output type", output);
+            }
+        }
+    }
 
     Args{
         carbon: carbon,
         elasticsearch: elasticsearch,
         stdout: stdout,
-        outputs: outputs,
+        outputs: final_outputs,
         config_path: cli_args.config_path,
     }
 }
@@ -192,7 +204,7 @@ fn parse_option<'a, 'b>(option: &str, matches: &clap::ArgMatches<'a, 'b>) -> Opt
 }
 
 fn get_cli_arguments() -> Args{
-    let output_types = vec!["elastic_search", "carbon", "stdout"];
+    let output_types = vec!["elasticsearch", "carbon", "stdout"];
     let yaml = load_yaml!("cli.yaml");
     let matches = App::from_yaml(yaml).get_matches();
     let mut outputs:Vec<String> = Vec::new();
@@ -221,8 +233,7 @@ fn get_cli_arguments() -> Args{
 
 macro_rules! parse_opt (
     ($name:ident, $doc:expr) => (
-
-    let $name: Option<String> = match $doc["$name"].as_str() {
+    let $name: Option<String> = match $doc.as_str() {
         Some(o) => Some(o.to_string()),
         None => None
     }
@@ -245,9 +256,9 @@ fn get_config() -> Result<Args, String>{
     };
 
     let doc = &docs[0];
-    parse_opt!(carbon, doc);
-    parse_opt!(elasticsearch, doc);
-    parse_opt!(stdout, doc);
+    parse_opt!(carbon, doc["carbon"]);
+    parse_opt!(elasticsearch, doc["elasticsearch"]);
+    parse_opt!(stdout, doc["stdout"]);
     // let carbon: Option<String> = match doc["carbon"].as_str() {
     //     Some(o) => Some(o.to_string()),
     //     None => None
@@ -554,7 +565,7 @@ fn main() {
         }
     };
     let args = get_arguments();
-    // println!("{:?}", args);
+    println!("{:?}", args);
     for output in &args.outputs {
         println!("Logging to {}", output);
     }

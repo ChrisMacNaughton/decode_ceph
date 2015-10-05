@@ -190,12 +190,6 @@ macro_rules! parse_opt (
         Some(o) => Some(o.to_string()),
         None => None
     }
-// pub fn $name(&self) -> Option<$t> {
-//     match *self {
-//         Yaml::$yt(ref v) => Some(v),
-//         _ => None
-//     }
-// }
     );
 );
 

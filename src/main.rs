@@ -119,26 +119,6 @@ impl Args {
 
 fn get_arguments() -> Args{
     let cli_args = get_cli_arguments();
-    // let config = match get_config {
-    //     Some(conf) => conf,
-    //     None => Args{},
-    // };
-    // return Args {
-    //     carbon: match cli_args.carbon {
-    //         Some(c) => c,
-    //         None
-    //     elasticsearch: parse_option("ES", &matches),
-    //     stdout: parse_option("STDOUT", &matches),
-    //     config_path: match parse_option("CONFIG", &matches) {
-    //         Some(path) => path,
-    //         None => "/etc/defaults/decode_ceph.yaml".to_string(),
-    //     },
-    //     outputs: outputs,
-    // }
-    // let _ = match get_config(){
-    //     Some(c) => c,
-    //     Err(_) => &cli_args,
-    // };
     let config = match get_config() {
         Ok(a) => a,
         Err(_) => Args::clean(),
@@ -259,18 +239,6 @@ fn get_config() -> Result<Args, String>{
     parse_opt!(carbon, doc["carbon"]);
     parse_opt!(elasticsearch, doc["elasticsearch"]);
     parse_opt!(stdout, doc["stdout"]);
-    // let carbon: Option<String> = match doc["carbon"].as_str() {
-    //     Some(o) => Some(o.to_string()),
-    //     None => None
-    // };
-    // let elasticsearch: Option<String> = match doc["elasticsearch"].as_str() {
-    //     Some(o) => Some(o.to_string()),
-    //     None => None
-    // };
-    // let stdout: Option<String> = match doc["stdout"].as_str() {
-    //     Some(o) => Some(o.to_string()),
-    //     None => None
-    // };
 
     let outputs: Vec<String> = match doc["outputs"].as_vec() {
         Some(o) => {

@@ -13,6 +13,7 @@ dependencies = [
  "rust-crypto 0.2.31 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.32 (registry+https://github.com/rust-lang/crates.io-index)",
  "users 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "yaml-rust 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

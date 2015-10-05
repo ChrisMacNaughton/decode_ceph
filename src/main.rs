@@ -22,7 +22,7 @@ use std::io::prelude::*;
 use std::net::{Ipv4Addr, Ipv6Addr, TcpStream};
 use std::str::FromStr;
 use std::fs::File;
-use yaml_rust::{Yaml, YamlLoader};
+use yaml_rust::YamlLoader;
 #[cfg(test)]
 mod tests{
     use std::io::Cursor;
@@ -117,13 +117,6 @@ impl Args {
     }
 }
 
-fn parse_option<'a, 'b>(option: &str, matches: &clap::ArgMatches<'a, 'b>) -> Option<String>{
-    match matches.value_of(option){
-        Some(opt) => Some(opt.to_string()),
-        None => None,
-    }
-}
-
 fn get_arguments() -> Args{
     let cli_args = get_cli_arguments();
     // let config = match get_config {
@@ -152,7 +145,50 @@ fn get_arguments() -> Args{
     };
     println!("args: {:?}", cli_args);
     println!("config: {:?}", config);
-    return cli_args;
+
+    let carbon = match cli_args.carbon {
+        Some(c) => Some(c),
+        None => match config.carbon {
+            Some(c) => Some(c),
+            None => None,
+        },
+    };
+    let elasticsearch = match cli_args.elasticsearch {
+        Some(c) => Some(c),
+        None => match config.elasticsearch {
+            Some(c) => Some(c),
+            None => None,
+        },
+    };
+    let stdout = match cli_args.stdout {
+        Some(c) => Some(c),
+        None => match config.stdout {
+            Some(c) => Some(c),
+            None => None,
+        },
+    };
+    let outputs = match cli_args.outputs.len() {
+        0 => match config.outputs.len() {
+            0 => Vec::new(),
+            _ => config.outputs,
+        },
+        _ => cli_args.outputs,
+    };
+
+    Args{
+        carbon: carbon,
+        elasticsearch: elasticsearch,
+        stdout: stdout,
+        outputs: outputs,
+        config_path: cli_args.config_path,
+    }
+}
+
+fn parse_option<'a, 'b>(option: &str, matches: &clap::ArgMatches<'a, 'b>) -> Option<String>{
+    match matches.value_of(option){
+        Some(opt) => Some(opt.to_string()),
+        None => None,
+    }
 }
 
 fn get_cli_arguments() -> Args{

@@ -327,10 +327,10 @@ impl CephPrimitive for CephMsgrMsg{
             }
         };
         let header = try!(CephMsgHeader::read_from_wire(cursor));
-        //println!("header: {:?}", &header);
+        debug!("CephMsgrMsg header: {:?}", &header);
         //CephMsg is sandwhiched between these two fields
         let msg = try!(read_message_from_wire(cursor, &header.msg_type));
-        //println!("msg: {:?}", &msg);
+        debug!("CephMsgrMsg msg: {:?}", &msg);
         //Skip the footer for now
         //let footer = try!(CephMsgFooter::read_from_wire(cursor));
         //println!("footer: {:?}", &footer);
@@ -691,24 +691,25 @@ pub enum Message{
 fn read_message_from_wire<R: Read>(cursor: &mut R, msg_type: &CephMsgType) -> Result<Message, SerialError>{
     match msg_type{
         &CephMsgType::MsgOsdOp => {
-            println!("osdop");
+            debug!("CephOsdOperation");
             let osdop = try!(CephOsdOperation::read_from_wire(cursor));
-            println!("osdop parsed");
+            debug!("CephOsdOperation parsed: {:?}", &osdop);
             return Ok(Message::OsdOp(osdop));
         },
         &CephMsgType::MsgOsdOpReply => {
-            println!("opreply");
+            debug!("CephOsdOperationReply");
             let op_reply = try!(CephOsdOperationReply::read_from_wire(cursor));
+            debug!("CephOsdOperationReply parsed: {:?}", &op_reply);
             return Ok(Message::OsdOpRepl(op_reply));
         },
         &CephMsgType::MsgOsdSubop => {
-            println!("subop");
+            debug!("subop");
             let osdop = try!(CephOsdOperation::read_from_wire(cursor));
-            println!("subop: {:?}", &osdop);
+            debug!("subop: {:?}", &osdop);
             return Ok(Message::OsdSubop(osdop));
         },
         &CephMsgType::MsgOsdSubopReply => {
-            println!("subopreply");
+            debug!("subopreply");
             let osdop = try!(CephOsdOperationReply::read_from_wire(cursor));
             return Ok(Message::OsdSubopReply(osdop));
         },

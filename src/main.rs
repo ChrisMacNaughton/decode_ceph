@@ -2,6 +2,7 @@
 #[macro_use] extern crate enum_primitive;
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate clap;
+#[macro_use] extern crate log;
 extern crate byteorder;
 extern crate ease;
 extern crate num;
@@ -123,8 +124,8 @@ fn get_arguments() -> Args{
         Ok(a) => a,
         Err(_) => Args::clean(),
     };
-    // println!("args: {:?}", cli_args);
-    // println!("config: {:?}", config);
+    debug!("args: {:?}", cli_args);
+    debug!("config: {:?}", config);
 
     let carbon = match cli_args.carbon {
         Some(c) => Some(c),
@@ -325,6 +326,7 @@ fn read_v4ip<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<Ipv4Addr, serial::Serial
         let d = try!(cursor.read_u8());
 
         let ip = Ipv4Addr::new(a,b,c,d);
+        debug!("Ipv4Addr parsed: {:?}", &ip);
         return Ok(ip);
 }
 
@@ -339,6 +341,7 @@ fn read_v6ip<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<Ipv6Addr, serial::Serial
         let h = try!(cursor.read_u16::<BigEndian>());
 
         let ip = Ipv6Addr::new(a,b,c,d,e,f,g,h);
+        debug!("Ipv6Addr parsed: {:?}", &ip);
         return Ok(ip);
 }
 
@@ -416,7 +419,7 @@ fn log_packet_to_carbon(server: &str, port: u16, data: String)->Result<(), Strin
 
     let mut stream = try!(TcpStream::connect((server, port)).map_err(|e| e.to_string()));
     let bytes_written = try!(stream.write(&data.into_bytes()[..]).map_err(|e| e.to_string()));
-    println!("Wrote: {} bytes to graphite", &bytes_written);
+    info!("Wrote: {} bytes to graphite", &bytes_written);
 
     return Ok(());
 }
@@ -427,10 +430,10 @@ fn log_packet_to_es(url: &str, json: &String)->Result<(), String>{
     req.body(json.clone());
     match req.post(){
         Ok(_) => {
-            println!("Logged to ES");
+            info!("Logged to ES");
             return Ok(());},
         Err(_) => {
-            println!("ES POST FAILED");
+            error!("ES POST FAILED");
             return Err("Post operation failed".to_string());
         }
     };
@@ -533,15 +536,14 @@ fn main() {
         }
     };
     let args = get_arguments();
-    // println!("{:?}", args);
     for output in &args.outputs {
-        println!("Logging to {}", output);
+        info!("Logging to {}", output);
     }
 
     let dev_list = match Device::list(){
         Ok(l) => l,
         Err(e) => {
-            println!("Unable to list network devices.  Error: {}", e);
+            error!("Unable to list network devices.  Error: {}", e);
             return;
         }
     };
@@ -549,22 +551,22 @@ fn main() {
     println!("Validating network device");
     for dev_device in dev_list{
         if dev_device.name == "any"{
-            println!("Found Network device");
-            println!("Setting up capture");
+            info!("Found Network device");
+            info!("Setting up capture");
             let mut cap = Capture::from_device(dev_device).unwrap() //open the device
                           .promisc(true)
                           //.snaplen(500)
                           .timeout(50)
                           .open() //activate the handle
                           .unwrap(); //assume activation worked
-            println!("Setting up filter");
+            info!("Setting up filter");
             //Grab both monitor and OSD traffic
             match cap.filter("tcp portrange 6789-7300"){
                 Ok(_) => {
-                    println!("Filter successful");
+                    info!("Filter successful");
                 },
                 Err(e) => {
-                    println!("Invalid capture filter. Error: {:?}", e);
+                    error!("Invalid capture filter. Error: {:?}", e);
                     return;
                 }
             }
@@ -581,6 +583,7 @@ fn main() {
                             if packet_header.is_ok(){
                                 let p = packet_header.unwrap();
                                 let print_result = process_packet(p, result.unwrap(), &args);
+                                debug!("Processed packet: {:?}", &print_result);
                             }
                         }
                     },

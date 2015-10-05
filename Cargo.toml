@@ -10,6 +10,7 @@ clap = {version = "*", features = ["yaml"]}
 crc = "*"
 ease = "*"
 enum_primitive = "*"
+log = "*"
 num = "*"
 pcap = "*"
 rust-crypto = "*"

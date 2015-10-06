@@ -25,8 +25,6 @@ use std::io::prelude::*;
 use std::net::{Ipv4Addr, Ipv6Addr, TcpStream};
 use std::str::FromStr;
 use std::fs::File;
-use std::sync::Arc;
-use std::thread;
 use yaml_rust::YamlLoader;
 
 #[cfg(test)]
@@ -348,66 +346,10 @@ fn read_v6ip<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<Ipv6Addr, serial::Serial
         return Ok(ip);
 }
 
-//Parses LINUX_SLL cooked headers
-fn parse_sll_etherframe<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<PacketHeader, serial::SerialError>{
-    cursor.set_position(14);
-    let ethertype = try!(cursor.read_u16::<BigEndian>());
-    if ethertype == 0x0800{
-        let mut current_pos = cursor.position();
-        cursor.set_position(current_pos + 12);
-
-        let src_ip = try!(read_v4ip(cursor));
-        let dst_ip = try!(read_v4ip(cursor));
-
-        let src_port = try!(cursor.read_u16::<BigEndian>());
-        let dst_port = try!(cursor.read_u16::<BigEndian>());
-
-        //Skip the TCP header bullshit
-        current_pos = cursor.position();
-        cursor.set_position(current_pos + 28);
-
-        return Ok(
-            PacketHeader{
-                src_port: src_port,
-                dst_port: dst_port,
-                src_v4addr: Some(src_ip),
-                dst_v4addr: Some(dst_ip),
-                src_v6addr: None,
-                dst_v6addr: None,
-            }
-        );
-    }else if  ethertype == 0x86DD{
-        //let mut current_pos = cursor.position();
-        //cursor.set_position(current_pos + 12);
-
-        let src_ip = try!(read_v6ip(cursor));
-        let dst_ip = try!(read_v6ip(cursor));
-
-        let src_port = try!(cursor.read_u16::<BigEndian>());
-        let dst_port = try!(cursor.read_u16::<BigEndian>());
-
-        //Skip the TCP header bullshit
-        let current_pos = cursor.position();
-        cursor.set_position(current_pos + 160);
-
-        return Ok(
-            PacketHeader{
-                src_port: src_port,
-                dst_port: dst_port,
-                src_v4addr: None,
-                dst_v4addr: None,
-                src_v6addr: Some(src_ip),
-                dst_v6addr: Some(dst_ip),
-            }
-        );
-    }else{
-        return Err(serial::SerialError::new(format!("Unknown Packet type: {}", ethertype)));
-    }
-}
-
 //Takes a cursor to a byte array and parses ip info from it
 fn parse_etherframe<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<PacketHeader, serial::SerialError>{
-    cursor.set_position(12);
+    //This is done now in the loop
+    //cursor.set_position(12);
     let ethertype = try!(cursor.read_u16::<BigEndian>());
 
     if ethertype == 0x0800{
@@ -615,67 +557,83 @@ fn main() {
     info!("Searching for network devices");
     for dev_device in dev_list{
         if dev_device.name == "any"{
-                let device_name = dev_device.name.clone();
-                info!("Found Network device {}", &device_name);
-                info!("Setting up capture({})", &device_name);
-                let mut cap = Capture::from_device(dev_device).unwrap() //open the device
-                              .promisc(true)
-                              //.snaplen(500)
-                              .timeout(50)
-                              .open() //activate the handle
-                              .unwrap(); //assume activation worked
-                let link_list = cap.list_datalinks().unwrap();
-                for link_type in link_list{
-                    info!("Device datalink({}): {:?}", &device_name, &link_type.get_name());
-                }
-                info!("Setting up filter({})", &device_name);
-                //Grab both monitor and OSD traffic
-                match cap.filter("tcp portrange 6789-7300"){
-                    Ok(_) => {
-                        info!("Filter successful({})", &device_name);
+            let device_name = dev_device.name.clone();
+            let mut cooked_header = false;
+
+            info!("Found Network device {}", &device_name);
+            info!("Setting up capture({})", &device_name);
+            let mut cap = Capture::from_device(dev_device).unwrap() //open the device
+                          .promisc(true)
+                          //.snaplen(500)
+                          .timeout(50)
+                          .open() //activate the handle
+                          .unwrap(); //assume activation worked
+            let link_list = cap.list_datalinks().unwrap();
+            //Try to detect "cooked" headers and set the cursor position properly
+            for link_type in link_list{
+                info!("Device datalink({}): {:?}", &device_name, &link_type.get_name());
+                match link_type{
+                    //LINUX_SLL
+                    pcap::Linktype(113) => {
+                        cooked_header = true;
                     },
-                    Err(e) => {
-                        error!("Invalid capture filter({}). Error: {:?}", &device_name, e);
-                        return;
-                    }
+                    //Anything else
+                    _ => {},
                 }
-                info!("Waiting for packets({})", &device_name);
-                //Grab some packets :)
-
-                //Infinite loop
-                loop {
-                    match cap.next(){
-                        //We received a packet
-                        Some(packet) =>{
-                            let data = packet.data;
-                            let mut cursor = Cursor::new(&data[..]);
-
-                            //Try to parse the packet headers, src, dst and ports
-                            //match parse_etherframe(&mut cursor){
-                            match parse_sll_etherframe(&mut cursor){
-                                //The packet parsing was clean
-                                Ok(header) => {
-                                    //Try to parse some Ceph info from the packet
-                                    if let Ok(dissect_result) = dissect_msgr(&mut cursor){
-                                        //Try to send the packet off to Elasticsearch, Carbon, stdout, etc
-                                        //let args_clone = args.clone();
-                                        let print_result = process_packet(header, dissect_result, &args);
-                                        debug!("Processed packet({}): {:?}",&device_name, &print_result);
-                                    }else{
-                                        //Failed to parse Ceph packet.  Ignore
-                                        //debug!("Failed to dissect ceph packet: {:?}", result);
-                                    }
-                                }
-                                //The packet parsing failed
-                                Err(err) => {
-                                    //error!("Invalid etherframe: {:?}", err)
-                                }
-                            };
-                        },
-                        //We missed a packet, ignore
-                        None => {},
-                    }
+            }
+            info!("Setting up filter({})", &device_name);
+            //Grab both monitor and OSD traffic
+            match cap.filter("tcp portrange 6789-7300"){
+                Ok(_) => {
+                    info!("Filter successful({})", &device_name);
+                },
+                Err(e) => {
+                    error!("Invalid capture filter({}). Error: {:?}", &device_name, e);
+                    return;
                 }
+            }
+            info!("Waiting for packets({})", &device_name);
+            //Grab some packets :)
+
+            //Infinite loop
+            loop {
+                match cap.next(){
+                    //We received a packet
+                    Some(packet) =>{
+                        let data = packet.data;
+                        let mut cursor = Cursor::new(&data[..]);
+
+                        //Try to parse the packet headers, src, dst and ports
+                        //match parse_etherframe(&mut cursor){
+                        if cooked_header{
+                            cursor.set_position(14);
+                        }else{
+                            cursor.set_position(12);
+                        }
+                        match parse_etherframe(&mut cursor){
+                            //The packet parsing was clean
+                            Ok(header) => {
+                                //Try to parse some Ceph info from the packet
+                                if let Ok(dissect_result) = dissect_msgr(&mut cursor){
+                                    //Try to send the packet off to Elasticsearch, Carbon, stdout, etc
+                                    //let args_clone = args.clone();
+                                    let print_result = process_packet(header, dissect_result, &args);
+                                    debug!("Processed packet({}): {:?}",&device_name, &print_result);
+                                }else{
+                                    //Failed to parse Ceph packet.  Ignore
+                                    //debug!("Failed to dissect ceph packet: {:?}", result);
+                                }
+                            }
+                            //The packet parsing failed
+                            Err(err) => {
+                                //error!("Invalid etherframe: {:?}", err)
+                            }
+                        };
+                    },
+                    //We missed a packet, ignore
+                    None => {},
+                }
+            }
         }
     }
 }

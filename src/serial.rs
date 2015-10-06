@@ -1373,7 +1373,7 @@ impl CephPrimitive for CephMsgHeader{
         let sequenece_num = try!(cursor.read_u64::<LittleEndian>());
         let transcation_id = try!(cursor.read_u64::<LittleEndian>());
         let msg_type_bits = try!(cursor.read_u16::<LittleEndian>());
-        //println!("msg_type bits: {:?}", &msg_type_bits);
+        //debug!("msg_type bits: {:?}", &msg_type_bits);
         let msg_type = match CephMsgType::from_u16(msg_type_bits){
             Some(t) => t,
             None => {

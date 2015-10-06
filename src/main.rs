@@ -327,7 +327,6 @@ fn read_v4ip<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<Ipv4Addr, serial::Serial
         let d = try!(cursor.read_u8());
 
         let ip = Ipv4Addr::new(a,b,c,d);
-        debug!("Ipv4Addr parsed: {:?}", &ip);
         return Ok(ip);
 }
 
@@ -526,6 +525,7 @@ fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg, output_args: &
 //MSGR is Ceph's outer message protocol
 fn dissect_msgr<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<serial::CephMsgrMsg, serial::SerialError>{
     let result = try!(serial::CephMsgrMsg::read_from_wire(cursor));
+    //WARNING: Log destroyer!  This produces a ton of messages
     return Ok(result);
 }
 
@@ -557,7 +557,7 @@ fn main() {
         if dev_device.name == "any"{
             info!("Found Network device");
             info!("Setting up capture");
-            let mut cap = Capture::from_device(dev_device).unwrap() //open the device
+            let mut cap = Capture::from_device("eth0").unwrap() //open the device
                           .promisc(true)
                           //.snaplen(500)
                           .timeout(50)
@@ -576,21 +576,36 @@ fn main() {
             }
             info!("Waiting for packets");
             //Grab some packets :)
+
+            //Infinite loop
             loop {
                 match cap.next(){
+                    //We received a packet
                     Some(packet) =>{
                         let data = packet.data;
                         let mut cursor = Cursor::new(&data[..]);
-                        let packet_header = parse_etherframe(&mut cursor);
-                        let result = dissect_msgr(&mut cursor);
-                        if result.is_ok(){
-                            if packet_header.is_ok(){
-                                let p = packet_header.unwrap();
-                                let print_result = process_packet(p, result.unwrap(), &args);
-                                debug!("Processed packet: {:?}", &print_result);
+
+                        //Try to parse the packet headers, src, dst and ports
+                        match parse_etherframe(&mut cursor){
+                            //The packet parsing was clean
+                            Ok(header) => {
+                                //Try to parse some Ceph info from the packet
+                                if let Ok(dissect_result) = dissect_msgr(&mut cursor){
+                                    //Try to send the packet off to Elasticsearch, Carbon, stdout, etc
+                                    let print_result = process_packet(header, dissect_result, &args);
+                                    debug!("Processed packet: {:?}", &print_result);
+                                }else{
+                                    //Failed to parse Ceph packet.  Ignore
+                                    //debug!("Failed to dissect ceph packet: {:?}", result);
+                                }
                             }
-                        }
+                            //The packet parsing failed
+                            Err(err) => {
+                                //error!("Invalid etherframe: {:?}", err)
+                            }
+                        };
                     },
+                    //We missed a packet, ignore
                     None => {},
                 }
             }

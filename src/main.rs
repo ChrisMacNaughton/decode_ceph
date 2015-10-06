@@ -195,9 +195,9 @@ fn get_arguments() -> Args{
         },
     };
     let elasticsearch = match cli_args.elasticsearch {
-        Some(c) => Some(c),
+        Some(c) => Some(format!("http://{}/ceph/operations", c).to_string()),
         None => match config.elasticsearch {
-            Some(c) => Some(c),
+            Some(c) => Some(format!("http://{}/ceph/operations", c).to_string()),
             None => None,
         },
     };
@@ -427,6 +427,7 @@ fn log_packet_to_carbon(server: &str, port: u16, data: String)->Result<(), Strin
 }
 
 fn log_packet_to_es(url: &str, json: &String)->Result<(), String>{
+    debug!("Logging to {}", url);
     let parsed_url = try!(ease::Url::parse(url).map_err(|e| e.to_string()));
     let mut req = ease::Request::new(parsed_url);
     req.body(json.clone());
@@ -482,6 +483,7 @@ fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg, output_args: &
                 };
                 let doc_json = try!(doc.to_json());
                 //It's ok to unwrap here because we checked is_some() above
+                // try!(log_packet_to_es("http://10.0.3.144:9200/ceph/operations", &doc_json));
                 try!(log_packet_to_es(&output_args.elasticsearch.clone().unwrap(), &doc_json));
             }
             return Ok(());

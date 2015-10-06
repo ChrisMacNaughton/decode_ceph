@@ -25,7 +25,9 @@ use std::io::prelude::*;
 use std::net::{Ipv4Addr, Ipv6Addr, TcpStream};
 use std::str::FromStr;
 use std::fs::File;
+use std::thread;
 use yaml_rust::YamlLoader;
+
 #[cfg(test)]
 mod tests{
     use std::io::Cursor;
@@ -108,7 +110,7 @@ macro_rules! parse_opt (
     );
 );
 
-#[derive(Debug)]
+#[derive(Copy,Clone,Debug)]
 struct Args {
     carbon: Option<String>,
     elasticsearch: Option<String>,
@@ -554,7 +556,9 @@ fn main() {
 
     info!("Validating network device");
     for dev_device in dev_list{
-        if dev_device.name == "any"{
+        if dev_device.name != "any" || dev_device.name != "lo"{
+            //let child = thread::spawn( || {
+
             info!("Found Network device");
             info!("Setting up capture");
             let mut cap = Capture::from_device("eth0").unwrap() //open the device
@@ -592,6 +596,7 @@ fn main() {
                                 //Try to parse some Ceph info from the packet
                                 if let Ok(dissect_result) = dissect_msgr(&mut cursor){
                                     //Try to send the packet off to Elasticsearch, Carbon, stdout, etc
+                                    //let args_clone = args.clone();
                                     let print_result = process_packet(header, dissect_result, &args);
                                     debug!("Processed packet: {:?}", &print_result);
                                 }else{
@@ -609,6 +614,7 @@ fn main() {
                     None => {},
                 }
             }
+        //});
         }
     }
 }

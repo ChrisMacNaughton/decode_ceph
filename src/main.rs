@@ -427,6 +427,7 @@ fn log_packet_to_carbon(server: &str, port: u16, data: String)->Result<(), Strin
 }
 
 fn log_packet_to_es(url: &str, json: &String)->Result<(), String>{
+    debug!("Logging to {}", url);
     let parsed_url = try!(ease::Url::parse(url).map_err(|e| e.to_string()));
     let mut req = ease::Request::new(parsed_url);
     req.body(json.clone());

@@ -533,7 +533,7 @@ fn dissect_msgr<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<serial::CephMsgrMsg, 
 
 fn main() {
     //TODO make configurable via cli or config arg
-    simple_logger::init_with_level(LogLevel::Debug).unwrap();
+    simple_logger::init_with_level(LogLevel::Info).unwrap();
 
     match check_user(){
         Ok(_) => {},

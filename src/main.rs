@@ -195,9 +195,9 @@ fn get_arguments() -> Args{
         },
     };
     let elasticsearch = match cli_args.elasticsearch {
-        Some(c) => Some(c),
+        Some(c) => Some(format!("http://{}/ceph/operations", c).to_string()),
         None => match config.elasticsearch {
-            Some(c) => Some(c),
+            Some(c) => Some(format!("http://{}/ceph/operations", c).to_string()),
             None => None,
         },
     };
@@ -483,6 +483,7 @@ fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg, output_args: &
                 };
                 let doc_json = try!(doc.to_json());
                 //It's ok to unwrap here because we checked is_some() above
+                // try!(log_packet_to_es("http://10.0.3.144:9200/ceph/operations", &doc_json));
                 try!(log_packet_to_es(&output_args.elasticsearch.clone().unwrap(), &doc_json));
             }
             return Ok(());

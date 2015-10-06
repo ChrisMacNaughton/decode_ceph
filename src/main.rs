@@ -25,6 +25,7 @@ use std::io::prelude::*;
 use std::net::{Ipv4Addr, Ipv6Addr, TcpStream};
 use std::str::FromStr;
 use std::fs::File;
+use std::sync::Arc;
 use std::thread;
 use yaml_rust::YamlLoader;
 
@@ -110,7 +111,7 @@ macro_rules! parse_opt (
     );
 );
 
-#[derive(Copy,Clone,Debug)]
+#[derive(Debug)]
 struct Args {
     carbon: Option<String>,
     elasticsearch: Option<String>,
@@ -541,8 +542,8 @@ fn main() {
             return;
         }
     };
-    let args = get_arguments();
-    for output in &args.outputs {
+    let shared_args = Arc::new(get_arguments());
+    for output in &shared_args.outputs {
         info!("Logging to {}", output);
     }
 
@@ -557,64 +558,64 @@ fn main() {
     info!("Validating network device");
     for dev_device in dev_list{
         if dev_device.name != "any" || dev_device.name != "lo"{
-            //let child = thread::spawn( || {
-
-            info!("Found Network device");
-            info!("Setting up capture");
-            let mut cap = Capture::from_device("eth0").unwrap() //open the device
-                          .promisc(true)
-                          //.snaplen(500)
-                          .timeout(50)
-                          .open() //activate the handle
-                          .unwrap(); //assume activation worked
-            info!("Setting up filter");
-            //Grab both monitor and OSD traffic
-            match cap.filter("tcp portrange 6789-7300"){
-                Ok(_) => {
-                    info!("Filter successful");
-                },
-                Err(e) => {
-                    error!("Invalid capture filter. Error: {:?}", e);
-                    return;
-                }
-            }
-            info!("Waiting for packets");
-            //Grab some packets :)
-
-            //Infinite loop
-            loop {
-                match cap.next(){
-                    //We received a packet
-                    Some(packet) =>{
-                        let data = packet.data;
-                        let mut cursor = Cursor::new(&data[..]);
-
-                        //Try to parse the packet headers, src, dst and ports
-                        match parse_etherframe(&mut cursor){
-                            //The packet parsing was clean
-                            Ok(header) => {
-                                //Try to parse some Ceph info from the packet
-                                if let Ok(dissect_result) = dissect_msgr(&mut cursor){
-                                    //Try to send the packet off to Elasticsearch, Carbon, stdout, etc
-                                    //let args_clone = args.clone();
-                                    let print_result = process_packet(header, dissect_result, &args);
-                                    debug!("Processed packet: {:?}", &print_result);
-                                }else{
-                                    //Failed to parse Ceph packet.  Ignore
-                                    //debug!("Failed to dissect ceph packet: {:?}", result);
-                                }
-                            }
-                            //The packet parsing failed
-                            Err(err) => {
-                                //error!("Invalid etherframe: {:?}", err)
-                            }
-                        };
+            let args = shared_args.clone();
+            let child = thread::spawn( move|| {
+                let device_name = dev_device.name.clone();
+                info!("Setting up capture on device ({})", device_name);
+                let mut cap = Capture::from_device(dev_device).unwrap() //open the device
+                              .promisc(true)
+                              //.snaplen(500)
+                              .timeout(50)
+                              .open() //activate the handle
+                              .unwrap(); //assume activation worked
+                info!("Setting up filter ({})", device_name);
+                //Grab both monitor and OSD traffic
+                match cap.filter("tcp portrange 6789-7300"){
+                    Ok(_) => {
+                        info!("Filter successful({})", device_name);
                     },
-                    //We missed a packet, ignore
-                    None => {},
+                    Err(e) => {
+                        error!("Invalid capture filter. Error: {:?}", e);
+                        return;
+                    }
                 }
-            }
-        //});
+                info!("Waiting for packets({})", device_name);
+                //Grab some packets :)
+
+                //Infinite loop
+                loop {
+                    match cap.next(){
+                        //We received a packet
+                        Some(packet) =>{
+                            let data = packet.data;
+                            let mut cursor = Cursor::new(&data[..]);
+
+                            //Try to parse the packet headers, src, dst and ports
+                            match parse_etherframe(&mut cursor){
+                                //The packet parsing was clean
+                                Ok(header) => {
+                                    //Try to parse some Ceph info from the packet
+                                    if let Ok(dissect_result) = dissect_msgr(&mut cursor){
+                                        //Try to send the packet off to Elasticsearch, Carbon, stdout, etc
+                                        //let args_clone = args.clone();
+                                        let print_result = process_packet(header, dissect_result, &args);
+                                        debug!("Processed packet: {:?}", &print_result);
+                                    }else{
+                                        //Failed to parse Ceph packet.  Ignore
+                                        //debug!("Failed to dissect ceph packet: {:?}", result);
+                                    }
+                                }
+                                //The packet parsing failed
+                                Err(err) => {
+                                    //error!("Invalid etherframe: {:?}", err)
+                                }
+                            };
+                        },
+                        //We missed a packet, ignore
+                        None => {},
+                    }
+                }
+            });
         }
     }
 }

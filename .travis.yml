@@ -3,3 +3,11 @@ before_script:
   - sudo apt-get update -q
   - sudo apt-get install libpcap-dev
 language: rust
+rust:
+  - nightly
+  - beta
+  - stable
+
+matrix:
+  allow_failures:
+    - rust: nightly

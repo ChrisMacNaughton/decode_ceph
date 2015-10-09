@@ -90,6 +90,7 @@ mod tests{
             0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 3, 1, 82, 0, 0, 0, 0, 176, 158, 40
         ];
         let mut cursor = Cursor::new(&v4_packet2[..]);
+        cursor.set_position(12);
         let packer_header = super::parse_etherframe(&mut cursor).unwrap();
         //assert_eq!(packer_header.src_port, 44474);
         //assert_eq!(packer_header.dst_port, 6789);

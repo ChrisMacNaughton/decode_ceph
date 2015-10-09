@@ -95,7 +95,6 @@ mod tests{
             0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 3, 1, 82, 0, 0, 0, 0, 176, 158, 40
         ];
         let mut cursor = Cursor::new(&v4_packet2[..]);
-        //Set the cursor so the parsing doesn't fail
         cursor.set_position(12);
         let packer_header = super::parse_etherframe(&mut cursor).unwrap();
 
@@ -740,8 +739,8 @@ fn main() {
                                 }
                             }
                             //The packet parsing failed
-                            Err(err) => {
-                                //debug!("Invalid etherframe: {:?}", err)
+                            Err(_) => {
+                                //error!("Invalid etherframe: {:?}", err)
                             }
                         };
                     },

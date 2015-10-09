@@ -1,5 +1,19 @@
-sudo: required
-before_script:
-  - sudo apt-get update -q
-  - sudo apt-get install libpcap-dev
+addons:
+  apt:
+    packages:
+      - libpcap-dev
 language: rust
+rust:
+  - nightly
+  - beta
+  - stable
+
+matrix:
+  allow_failures:
+    - rust: nightly
+cache:
+  apt: true
+  rust-download: true
+  directories:
+    - $TRAVIS_BUILD_DIR/target
+    - ~/.cargo

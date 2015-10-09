@@ -628,7 +628,7 @@ fn main() {
                                 }
                             }
                             //The packet parsing failed
-                            Err(err) => {
+                            Err(_) => {
                                 //error!("Invalid etherframe: {:?}", err)
                             }
                         };

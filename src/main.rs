@@ -29,8 +29,13 @@ use yaml_rust::YamlLoader;
 
 #[cfg(test)]
 mod tests{
+    extern crate pcap;
+
     use std::io::Cursor;
-    use std::net::{Ipv4Addr};
+    use std::net::Ipv4Addr;
+    use std::path::Path;
+    use pcap::{Capture, Device};
+    use super::serial;
 
     #[test]
     fn test_packet_parsing(){
@@ -90,13 +95,109 @@ mod tests{
             0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 3, 1, 82, 0, 0, 0, 0, 176, 158, 40
         ];
         let mut cursor = Cursor::new(&v4_packet2[..]);
+        //Set the cursor so the parsing doesn't fail
+        cursor.set_position(12);
         let packer_header = super::parse_etherframe(&mut cursor).unwrap();
-        //assert_eq!(packer_header.src_port, 44474);
-        //assert_eq!(packer_header.dst_port, 6789);
-        //assert_eq!(packer_header.src_v4addr, Ipv4Addr(10,0,3,99));
-        //assert_eq!(packer_header.dst_v4addr, Ipv4Addr(10,0,3,144));
-        let result = super::dissect_msgr(&mut cursor);
+
+        //Validate the header parsing results
+        let valid_header = super::PacketHeader{
+            src_port: 60013,
+            dst_port: 6800,
+            src_v4addr: Some(Ipv4Addr::new(10,0,3,99)),
+            dst_v4addr: Some(Ipv4Addr::new(10,0,3,144)),
+            src_v6addr: None,
+            dst_v6addr: None,
+        };
+        let valid_ceph_header = serial::CephMsgHeader{
+            sequence_num: 2,
+            transaction_id: 3,
+            msg_type: serial::CephMsgType::MsgOsdOp,
+            priority: 63,
+            version: 4,
+            front_len: 153,
+            middle_len: 0,// The size of the middle section
+            data_len: 12,
+            data_off: 0,  // The way data should be aligned by the reciever
+            entity_name: serial::CephEntityName{
+                entity_type: serial::CephEntity::Client,
+                num: 4506,
+            },
+            compat_version: 3,
+            reserved: 0,
+            crc: 1786657620,
+        };
+
+        let valid_ceph_osd_op = serial::CephOsdOperation{
+            client: 0,
+            map_epoch: 90,
+            flags: serial::OsdOp::from_bits(0x0004| 0x0020).unwrap(),
+            modification_time: serial::Utime { tv_sec: 1442020884, tv_nsec: 847350000 },
+            reassert_version: 0, reassert_epoch: 0,
+            locator: serial::ObjectLocator { encoding_version: 6, min_compat_version: 3, size: 28, pool: 0, namespace_size: 0, namespace_data: vec![] },
+            placement_group: serial::PlacementGroup { group_version: 1, pool: 0, seed: 2538179983, preferred: 4294967295 },
+            object_id: serial::ObjectId { size: 2, data: vec![104, 119] },
+            operation_count: 1,
+            operation: serial::Operation { operation: 8706, flags: 0, offset: 0, size: 12, truncate_size: 0, truncate_seq: 0, payload_size: 12 },
+            snapshot_id: 18446744073709551614,
+            snapshot_seq: 0,
+            snapshot_count: 0,
+            retry_attempt: 0,
+            payload: vec![],
+        };
+
+        let valid_ceph_footer = serial::CephMsgFooter{
+            front_crc: 0,
+            middle_crc: 0,
+            data_crc: 0,
+            crypto_sig: 0,
+            flags: 0,
+        };
+
+        assert_eq!(packer_header, valid_header);
+
+        let result = super::dissect_msgr(&mut cursor).unwrap();
         println!("Result: {:?}", result);
+        assert_eq!(result.header, valid_ceph_header);
+        assert_eq!(result.msg, serial::Message::OsdOp(valid_ceph_osd_op));
+        assert_eq!(result.footer, valid_ceph_footer);
+    }
+
+    #[test]
+    fn test_pcap_parsing(){
+        let args = super::Args{
+            carbon: None,
+            elasticsearch: None,
+            stdout: Some("stdout".to_string()),
+            outputs: vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()],
+            config_path: "".to_string(),
+        };
+        //Set the cursor so the parsing doesn't fail
+        let mut cap = Capture::from_file(Path::new("ceph.pcap")).unwrap();
+        while let Some(packet) = cap.next() {
+            //We received a packet
+            let data = packet.data;
+            let mut cursor = Cursor::new(&data[..]);
+
+            //Try to parse the packet headers, src, dst and ports
+            cursor.set_position(12);
+            match super::parse_etherframe(&mut cursor){
+                //The packet parsing was clean
+                Ok(header) => {
+                    //Try to parse some Ceph info from the packet
+                    if let Ok(dissect_result) = super::dissect_msgr(&mut cursor){
+                        let print_result = super::process_packet(header, dissect_result, &args);
+                        //println!("Processed packet: {:?}", &print_result);
+                    }else{
+                        //Failed to parse Ceph packet.  Ignore
+                        //println!("Failed to dissect ceph packet from raw packet: {:?}", cursor);
+                    }
+                }
+                //The packet parsing failed
+                Err(err) => {
+                    //println!("Invalid etherframe: {:?}", err)
+                }
+            };
+        }
     }
 }
 
@@ -130,11 +231,13 @@ impl Args {
     }
 }
 
+//TODO expose even more data
 #[derive(Debug)]
 struct Document{
     header: PacketHeader,
     flags: serial::OsdOp,
     operation_count: u16,
+    //placement_group: serial::PlacementGroup,
     size: u64,
     timestamp: u64, //Milliseconds since epoch
 }
@@ -166,7 +269,7 @@ impl Document{
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct PacketHeader{
     pub src_port: u16,
     pub dst_port: u16,
@@ -458,6 +561,17 @@ fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg, output_args: &
     match msg.msg{
         //Client -> OSD operation
         serial::Message::OsdOp(osd_op) => {
+            if output_args.stdout.is_some(){
+                let now = time::now();
+                let time_spec = now.to_timespec();
+                //TODO Expand this
+                println!("{}", format!("ceph.{}.{:?}.{} {}",
+                    &header.src_v4addr.unwrap(),
+                    &osd_op.flags,
+                    &osd_op.operation.size,
+                    time_spec.sec)
+                );
+            }
             //Grab the current time to send along
             if output_args.carbon.is_some(){
                 let now = time::now();
@@ -529,7 +643,6 @@ fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg, output_args: &
 //MSGR is Ceph's outer message protocol
 fn dissect_msgr<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<serial::CephMsgrMsg, serial::SerialError>{
     let result = try!(serial::CephMsgrMsg::read_from_wire(cursor));
-    //WARNING: Log destroyer!  This produces a ton of messages
     return Ok(result);
 }
 
@@ -566,7 +679,7 @@ fn main() {
             info!("Setting up capture({})", &device_name);
             let mut cap = Capture::from_device(dev_device).unwrap() //open the device
                           .promisc(true)
-                          //.snaplen(500)
+                          //.snaplen(500) //Might need this still if we're losing packets
                           .timeout(50)
                           .open() //activate the handle
                           .unwrap(); //assume activation worked
@@ -623,12 +736,12 @@ fn main() {
                                     debug!("Processed packet({}): {:?}",&device_name, &print_result);
                                 }else{
                                     //Failed to parse Ceph packet.  Ignore
-                                    //debug!("Failed to dissect ceph packet: {:?}", result);
+                                    //debug!("Failed to dissect ceph packet from raw packet: {:?}", cursor);
                                 }
                             }
                             //The packet parsing failed
                             Err(err) => {
-                                //error!("Invalid etherframe: {:?}", err)
+                                //debug!("Invalid etherframe: {:?}", err)
                             }
                         };
                     },

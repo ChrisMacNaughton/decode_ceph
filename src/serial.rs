@@ -373,7 +373,7 @@ impl CephPrimitive for CephMsgrMsg{
 enum_from_primitive!{
 //#[repr(u32)]
 #[repr(u8)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,Eq,PartialEq)]
 pub enum CephEntity{
     Mon=1,
     Mds=2,
@@ -618,7 +618,7 @@ pub enum CephMsg{
 }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub enum Message{
     Paxos(PaxosMessage),
     Command,
@@ -703,13 +703,13 @@ fn read_message_from_wire<R: Read>(cursor: &mut R, msg_type: &CephMsgType) -> Re
             return Ok(Message::OsdOpRepl(op_reply));
         },
         &CephMsgType::MsgOsdSubop => {
-            debug!("subop");
+            debug!("CephOsdSubOperation");
             let osdop = try!(CephOsdOperation::read_from_wire(cursor));
             debug!("subop: {:?}", &osdop);
             return Ok(Message::OsdSubop(osdop));
         },
         &CephMsgType::MsgOsdSubopReply => {
-            debug!("subopreply");
+            debug!("CephOsdSubOperationReply");
             let osdop = try!(CephOsdOperationReply::read_from_wire(cursor));
             return Ok(Message::OsdSubopReply(osdop));
         },
@@ -744,7 +744,7 @@ fn write_message_to_wire(msg: Message) -> Result<Vec<u8>, SerialError>{
 }
 
 enum_from_primitive! {
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,Eq,PartialEq)]
 pub enum CephMsgType{
     MsgPaxos = 40,
     MsgOsdMap = 41,
@@ -853,7 +853,7 @@ bitflags!{
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct ObjectLocator{
     pub encoding_version: u8,
     pub min_compat_version: u8,
@@ -907,7 +907,7 @@ impl CephPrimitive for ObjectLocator {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct PlacementGroup{
     pub group_version: u8,
     pub pool: u64,
@@ -942,7 +942,7 @@ impl CephPrimitive for PlacementGroup {
 
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct ObjectId{
     pub size: u32,
     pub data: Vec<u8>
@@ -974,7 +974,7 @@ impl CephPrimitive for ObjectId {
 
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct Operation{
     pub operation: u16,
     pub flags: u32,
@@ -1020,7 +1020,7 @@ impl CephPrimitive for Operation {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct ReplayVersion {
     version: u64,
     epoch: u32,
@@ -1045,7 +1045,7 @@ impl CephPrimitive for ReplayVersion {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct CephOsdOperationReply{
     pub object_id: ObjectId,
     pub placement_group: PlacementGroup,
@@ -1118,7 +1118,7 @@ impl CephPrimitive for CephOsdOperationReply{
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct CephOsdOperation{
     pub client: u32,
     pub map_epoch: u32,
@@ -1221,7 +1221,23 @@ impl CephPrimitive for CephOsdOperation{
     }
 }
 
+//OSD <-> OSD operations
+/*
 #[derive(Debug)]
+pub struct CephOsdSubOperation {
+    pub map_epoch: u32,
+
+    pub locator: ObjectLocator,
+    pub acknowledgements_wanted: u8,
+
+    pub operation: Operation, //TODO: Change to Vec<Operation>,
+    pub modification_time: Utime,
+    pub old_exists: bool,
+    pub old_size: u64,
+}
+*/
+
+#[derive(Debug,Eq,PartialEq)]
 pub struct PaxosMessage {
     pub version: u64,
     pub mon: u16,
@@ -1249,7 +1265,7 @@ impl CephPrimitive for PaxosMessage{
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct MonCommand {
     pub paxos: PaxosMessage,
     pub fsid: String,
@@ -1308,13 +1324,13 @@ impl CephPrimitive for MonCommand{
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct CephEntityName{
     pub entity_type: CephEntity,
     pub num: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct Utime {
     pub tv_sec: u32,  // Seconds since epoch.
     pub tv_nsec: u32, // Nanoseconds since the last second.
@@ -1351,7 +1367,7 @@ impl CephPrimitive for Utime{
 }
 
 // From src/include/msgr.h
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct CephMsgHeader {
     pub sequence_num: u64,
     pub transaction_id: u64,
@@ -1364,8 +1380,8 @@ pub struct CephMsgHeader {
     pub data_off: u16,  // The way data should be aligned by the reciever
     pub entity_name: CephEntityName, // Information about the sender
     pub compat_version: u16, // Oldest compatible encoding version
-    reserved: u16, // Unused
-    crc: u32,  // CRC of header
+    pub reserved: u16, // Unused
+    pub crc: u32,  // CRC of header
 }
 
 impl CephPrimitive for CephMsgHeader{
@@ -1457,7 +1473,7 @@ impl CephPrimitive for CephMsgHeader{
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct CephMsgFooter {
     pub front_crc: u32,
     pub middle_crc: u32,

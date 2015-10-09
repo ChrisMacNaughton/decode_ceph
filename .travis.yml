@@ -2,6 +2,8 @@
 # before_script:
 #   - sudo apt-get update -q
 #   - sudo apt-get install libpcap-dev
+before_script:
+  - cargo build
 addons:
   apt:
     packages:
@@ -15,3 +17,4 @@ rust:
 matrix:
   allow_failures:
     - rust: nightly
+cache: $TRAVIS_BUILD_DIR/target

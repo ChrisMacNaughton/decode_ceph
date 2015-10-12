@@ -246,8 +246,8 @@ impl Document{
     fn to_json(&self)->Result<String, String>{
         return Ok(format!("{{\"src_ip\": \"{}\",\"dst_ip\": \"{}\", \"operation\":\"{:?}\", \
             \"operation_count\":{}, \"size\":{}, \"postDate\":\"{}\"}}",
-            self.header.src_v4addr.or(self.header.src_v6addr.unwrap_or("unknown src addr")),
-            self.header.dst_v4addr.or(self.header.dst_v6addr.unwrap_or("unknown dst addr")),
+            self.header.src_v4addr.or(self.header.src_v6addr.unwrap_or(Ipv4Addr::new(0,0,0,0))),
+            self.header.dst_v4addr.or(self.header.dst_v6addr.unwrap_or(Ipv4Addr::new(0,0,0,0))),
             self.flags,
             self.operation_count,
             self.size,

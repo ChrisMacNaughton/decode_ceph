@@ -143,27 +143,14 @@ struct Document{
 // JSON value representation
 impl Document{
     fn to_json(&self)->Result<String, String>{
-        if self.header.src_v4addr.is_some() && self.header.dst_v4addr.is_some(){
-            return Ok(format!("{{\"src_ip\": \"{}\",\"dst_ip\": \"{}\", \"operation\":\"{:?}\", \
-                    \"operation_count\":{}, \"size\":{}, \"postDate\":\"{}\"}}",
-                    self.header.src_v4addr.unwrap(),
-                    self.header.dst_v4addr.unwrap(),
-                    self.flags,
-                    self.operation_count,
-                    self.size,
-                    self.timestamp));
-        }else if self.header.src_v6addr.is_some() && self.header.dst_v6addr.is_some(){
-            return Ok(format!("{{\"src_ip\": \"{}\",\"dst_ip\": \"{}\", \"operation\":\"{:?}\", \
-                    \"operation_count\":{}, \"size\":{}, \"postDate\":\"{}\"}}",
-                    self.header.src_v6addr.unwrap(),
-                    self.header.dst_v6addr.unwrap(),
-                    self.flags,
-                    self.operation_count,
-                    self.size,
-                    self.timestamp));
-        }else{
-            return Err("src_v4addr or src_v6addr is missing".to_string());
-        }
+        return Ok(format!("{{\"src_ip\": \"{}\",\"dst_ip\": \"{}\", \"operation\":\"{:?}\", \
+            \"operation_count\":{}, \"size\":{}, \"postDate\":\"{}\"}}",
+            self.header.src_v4addr.or(self.header.src_v6addr.unwrap_or("unknown src addr")),
+            self.header.dst_v4addr.or(self.header.dst_v6addr.unwrap_or("unknown dst addr")),
+            self.flags,
+            self.operation_count,
+            self.size,
+            self.timestamp));
     }
 }
 

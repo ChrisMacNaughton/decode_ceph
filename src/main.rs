@@ -166,6 +166,7 @@ mod tests{
         let args = super::Args{
             carbon: None,
             elasticsearch: None,
+            statsd: None,
             stdout: Some("stdout".to_string()),
             outputs: vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()],
             config_path: "".to_string(),
@@ -214,6 +215,7 @@ struct Args {
     carbon: Option<String>,
     elasticsearch: Option<String>,
     stdout: Option<String>,
+    statsd: Option<String>,
     outputs: Vec<String>,
     config_path: String
 }
@@ -224,6 +226,7 @@ impl Args {
             carbon: None,
             elasticsearch: None,
             stdout: None,
+            statsd: None,
             outputs: Vec::new(),
             config_path: "".to_string()
         }
@@ -305,6 +308,13 @@ fn get_arguments() -> Args{
             None => None,
         },
     };
+    let statsd = match cli_args.statsd {
+        Some(c) => Some(c),
+        None => match config.statsd {
+            Some(c) => Some(c),
+            None => None,
+        },
+    };
     let elasticsearch = match cli_args.elasticsearch {
         Some(c) => Some(format!("http://{}/ceph/operations", c).to_string()),
         None => match config.elasticsearch {
@@ -343,6 +353,7 @@ fn get_arguments() -> Args{
         carbon: carbon,
         elasticsearch: elasticsearch,
         stdout: stdout,
+        statsd: statsd,
         outputs: final_outputs,
         config_path: cli_args.config_path,
     }
@@ -374,6 +385,7 @@ fn get_cli_arguments() -> Args{
         carbon: parse_option("CARBON", &matches),
         elasticsearch: parse_option("ES", &matches),
         stdout: parse_option("STDOUT", &matches),
+        statsd: parse_option("STATSD", &matches),
         config_path: match parse_option("CONFIG", &matches) {
             Some(path) => path,
             None => "/etc/default/decode_ceph.yaml".to_string(),
@@ -399,6 +411,7 @@ fn get_config() -> Result<Args, String>{
 
     let doc = &docs[0];
     parse_opt!(carbon, doc["carbon"]);
+    parse_opt!(statsd, doc["statsd"]);
     parse_opt!(elasticsearch, doc["elasticsearch"]);
     parse_opt!(stdout, doc["stdout"]);
 
@@ -418,6 +431,7 @@ fn get_config() -> Result<Args, String>{
         carbon: carbon,
         elasticsearch: elasticsearch,
         stdout: stdout,
+        statsd: statsd,
         config_path: "/etc/default/decode_ceph.yaml".to_string(),
         outputs: outputs,
     })

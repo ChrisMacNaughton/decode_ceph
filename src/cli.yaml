@@ -18,6 +18,11 @@ args:
         short: s
         long: stdout
         takes_value: true
+    - STATSD:
+        help: Statsd server to send data to
+        short: d
+        long: statsd
+        takes_value: true
     - OUTPUTS:
         help: Types of output to use
         short: o
@@ -28,6 +33,7 @@ args:
             - elasticsearch
             - carbon
             - stdout
+            - statsd
     - CONFIG:
         help: location of the yaml file to use for configuration
         short: c

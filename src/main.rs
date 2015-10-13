@@ -11,6 +11,8 @@ extern crate users;
 extern crate simple_logger;
 extern crate time;
 extern crate yaml_rust;
+extern crate statsd;
+
 mod serial;
 use serial::{CephPrimitive};
 mod crypto;
@@ -26,6 +28,7 @@ use std::net::{Ipv4Addr, Ipv6Addr, TcpStream};
 use std::str::FromStr;
 use std::fs::File;
 use yaml_rust::YamlLoader;
+use statsd::Client;
 
 #[cfg(test)]
 mod tests{

@@ -244,10 +244,32 @@ struct Document{
 // JSON value representation
 impl Document{
     fn to_json(&self)->Result<String, String>{
+
+        let src_addr: String = match self.header.src_v4addr{
+            Some(addr) => addr.to_string(),
+            None => {
+                match self.header.src_v6addr{
+                    Some(addr) => addr.to_string(),
+                    None => "".to_string(),
+                }
+            },
+        };
+
+        let dst_addr: String = match self.header.dst_v4addr{
+            Some(addr) => addr.to_string(),
+            None => {
+                match self.header.dst_v6addr{
+                    Some(addr) => addr.to_string(),
+                    None => "".to_string(),
+                }
+            },
+        };
+
+
         return Ok(format!("{{\"src_ip\": \"{}\",\"dst_ip\": \"{}\", \"operation\":\"{:?}\", \
             \"operation_count\":{}, \"size\":{}, \"postDate\":\"{}\"}}",
-            self.header.src_v4addr.or(self.header.src_v6addr.unwrap_or(Ipv4Addr::new(0,0,0,0))),
-            self.header.dst_v4addr.or(self.header.dst_v6addr.unwrap_or(Ipv4Addr::new(0,0,0,0))),
+            src_addr,
+            dst_addr,
             self.flags,
             self.operation_count,
             self.size,

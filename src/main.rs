@@ -625,6 +625,18 @@ fn log_msg_to_elasticsearch(header: &PacketHeader, msg: &serial::CephMsgrMsg, ou
     Ok(())
 }
 
+fn log_msg_to_statsd(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
+    if output_args.statsd.is_some(){
+        let op = match msg.msg {
+            serial::Message::OsdOp(ref osd_op) => osd_op,
+            serial::Message::OsdSubop(ref sub_op) => sub_op,
+            _ => return Err("Bad type".to_string())
+        };
+        // Actually send the message
+    }
+    Ok(())
+}
+
 fn log_msg_to_stdout(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     if output_args.stdout.is_some(){
         let op = match msg.msg {
@@ -650,6 +662,7 @@ fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg, output_args: &
     let _ = log_msg_to_carbon(&header, &msg, output_args);
     let _ = log_msg_to_elasticsearch(&header, &msg, output_args);
     let _ = log_msg_to_stdout(&header, &msg, output_args);
+    let _ = log_msg_to_statsd(&header, &msg, output_args);
     Ok(())
 }
 

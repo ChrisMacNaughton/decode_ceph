@@ -632,6 +632,15 @@ fn log_msg_to_statsd(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
             serial::Message::OsdSubop(ref sub_op) => sub_op,
             _ => return Err("Bad type".to_string())
         };
+        let mut client = Client::new("127.0.0.1:8125", "myapp").unwrap();
+
+        let operation_count = op.operation_count as f64;
+        client.count("operations", operation_count);
+
+        let size = op.operation.size as f64;
+        client.count(format!("size.dst.{}", &header.dst_v4addr.unwrap()).as_ref(), size);
+        client.count(format!("size.srs.{}", &header.src_v4addr.unwrap()).as_ref(), size);
+        client.count("size", size);
         // Actually send the message
     }
     Ok(())

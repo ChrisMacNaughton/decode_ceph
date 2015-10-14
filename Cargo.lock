@@ -13,7 +13,7 @@ dependencies = [
  "pcap 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rust-crypto 0.2.31 (registry+https://github.com/rust-lang/crates.io-index)",
  "simple_logger 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "statsd 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "statsd 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.32 (registry+https://github.com/rust-lang/crates.io-index)",
  "users 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "yaml-rust 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -319,7 +319,7 @@ dependencies = [
 
 [[package]]
 name = "statsd"
-version = "0.1.2"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "clock_ticks 0.0.6 (registry+https://github.com/rust-lang/crates.io-index)",

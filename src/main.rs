@@ -238,8 +238,8 @@ impl Args {
 
 //TODO expose even more data
 #[derive(Debug)]
-struct Document{
-    header: PacketHeader,
+struct Document<'a>{
+    header: &'a PacketHeader,
     flags: serial::OsdOp,
     operation_count: u16,
     //placement_group: serial::PlacementGroup,
@@ -248,7 +248,7 @@ struct Document{
 }
 
 // JSON value representation
-impl Document{
+impl<'a> Document<'a>{
     fn to_json(&self)->Result<String, String>{
 
         let src_addr: String = match self.header.src_v4addr{
@@ -581,88 +581,76 @@ fn parse_carbon_url(url: &String)->Result<(String, u16), String>{
     }
 }
 
+fn log_msg_to_carbon(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
+    if output_args.carbon.is_some(){
+        let op = match msg.msg {
+            serial::Message::OsdOp(ref osd_op) => osd_op,
+            serial::Message::OsdSubop(ref sub_op) => sub_op,
+            _ => return Err("Bad type".to_string())
+        };
+        let now = time::now();
+        let time_spec = now.to_timespec();
+        let carbon_url = output_args.carbon.clone().unwrap();
+        let (carbon_host, carbon_port) = try!(parse_carbon_url(&carbon_url));
+        let graphite_data = format!("ceph.{}.{:?}.{} {}",
+            &header.src_v4addr.unwrap(),
+            &op.flags,
+            &op.operation.size,
+            time_spec.sec);
+        try!(log_packet_to_carbon(&carbon_host, carbon_port, graphite_data));
+    }
+    Ok(())
+}
+
+fn log_msg_to_elasticsearch(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
+    if output_args.elasticsearch.is_some(){
+        let op = match msg.msg {
+            serial::Message::OsdOp(ref osd_op) => osd_op,
+            serial::Message::OsdSubop(ref sub_op) => sub_op,
+            _ => return Err("Bad type".to_string())
+        };
+        let milliseconds_since_epoch = get_time();
+        let doc = Document{
+            header: header,
+            flags: op.flags,
+            operation_count: op.operation_count,
+            size: op.operation.size,
+            timestamp: milliseconds_since_epoch,
+        };
+        let doc_json = try!(doc.to_json());
+        //It's ok to unwrap here because we checked is_some() above
+        // try!(log_packet_to_es("http://10.0.3.144:9200/ceph/operations", &doc_json));
+        try!(log_packet_to_es(&output_args.elasticsearch.clone().unwrap(), &doc_json));
+    }
+    Ok(())
+}
+
+fn log_msg_to_stdout(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
+    if output_args.stdout.is_some(){
+        let op = match msg.msg {
+            serial::Message::OsdOp(ref osd_op) => osd_op,
+            serial::Message::OsdSubop(ref sub_op) => sub_op,
+            _ => return Err("Bad type".to_string())
+        };
+        let now = time::now();
+        let time_spec = now.to_timespec();
+        //TODO Expand this
+        println!("{}", format!("ceph.{}.{:?}.{} {}",
+            &header.src_v4addr.unwrap(),
+            op.flags,
+            op.operation.size,
+            time_spec.sec)
+        );
+    }
+    Ok(())
+}
+
 fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     //Process OSD operation packets
-    match msg.msg{
-        //Client -> OSD operation
-        serial::Message::OsdOp(osd_op) => {
-            if output_args.stdout.is_some(){
-                let now = time::now();
-                let time_spec = now.to_timespec();
-                //TODO Expand this
-                println!("{}", format!("ceph.{}.{:?}.{} {}",
-                    &header.src_v4addr.unwrap(),
-                    &osd_op.flags,
-                    &osd_op.operation.size,
-                    time_spec.sec)
-                );
-            }
-            //Grab the current time to send along
-            if output_args.carbon.is_some(){
-                let now = time::now();
-                let time_spec = now.to_timespec();
-                let carbon_url = output_args.carbon.clone().unwrap();
-                let (carbon_host, carbon_port) = try!(parse_carbon_url(&carbon_url));
-                let graphite_data = format!("ceph.{}.{:?}.{} {}",
-                    &header.src_v4addr.unwrap(),
-                    &osd_op.flags,
-                    &osd_op.operation.size,
-                    time_spec.sec);
-                try!(log_packet_to_carbon(&carbon_host, carbon_port, graphite_data));
-            }
-
-            if output_args.elasticsearch.is_some(){
-                let milliseconds_since_epoch = get_time();
-                let doc = Document{
-                    header: header,
-                    flags: osd_op.flags,
-                    operation_count: osd_op.operation_count,
-                    size: osd_op.operation.size,
-                    timestamp: milliseconds_since_epoch,
-                };
-                let doc_json = try!(doc.to_json());
-                //It's ok to unwrap here because we checked is_some() above
-                // try!(log_packet_to_es("http://10.0.3.144:9200/ceph/operations", &doc_json));
-                try!(log_packet_to_es(&output_args.elasticsearch.clone().unwrap(), &doc_json));
-            }
-            return Ok(());
-        },
-        //Osd <-> Osd operation
-        serial::Message::OsdSubop(sub_op) => {
-            if output_args.carbon.is_some(){
-                let now = time::now();
-                let time_spec = now.to_timespec();
-                let carbon_url = output_args.carbon.clone().unwrap();
-                let (carbon_host, carbon_port) = try!(parse_carbon_url(&carbon_url));
-
-                let graphite_data = format!("ceph.{}.{:?}.{} {}",
-                    &header.src_v4addr.unwrap(),
-                    &sub_op.flags,
-                    &sub_op.operation.size,
-                    time_spec.sec);
-                try!(log_packet_to_carbon(&carbon_host, carbon_port, graphite_data));
-            }
-
-            if output_args.elasticsearch.is_some(){
-                let milliseconds_since_epoch = get_time();
-                let doc = Document{
-                    header: header,
-                    flags: sub_op.flags,
-                    operation_count: sub_op.operation_count,
-                    size: sub_op.operation.size,
-                    timestamp: milliseconds_since_epoch,
-                };
-                let doc_json = try!(doc.to_json());
-                //It's ok to unwrap here because we checked is_some() above
-                try!(log_packet_to_es(&output_args.elasticsearch.clone().unwrap(), &doc_json));
-            }
-            return Ok(());
-        },
-        //TODO: Add more operation parsing results here
-        _=> {
-            return Ok(());
-        }
-    }
+    let _ = log_msg_to_carbon(&header, &msg, output_args);
+    let _ = log_msg_to_elasticsearch(&header, &msg, output_args);
+    let _ = log_msg_to_stdout(&header, &msg, output_args);
+    Ok(())
 }
 
 //MSGR is Ceph's outer message protocol

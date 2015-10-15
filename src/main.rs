@@ -340,7 +340,7 @@ fn get_arguments() -> Args{
         _ => Some(cli_args.outputs),
     };
 
-    let output_types = vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()];
+    let output_types = vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string(), "statsd".to_string()];
     let mut final_outputs:Vec<String> = Vec::new();
     if let Some(ref out) = outputs {
         for output in out.iter() {
@@ -632,7 +632,7 @@ fn log_msg_to_statsd(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
             serial::Message::OsdSubop(ref sub_op) => sub_op,
             _ => return Err("Bad type".to_string())
         };
-        let mut client = Client::new("127.0.0.1:8125", "myapp").unwrap();
+        let mut client = Client::new(output_args.statsd.clone().unwrap().as_ref(), "ceph").unwrap();
 
         let operation_count = op.operation_count as f64;
         client.count("operations", operation_count);
@@ -641,7 +641,6 @@ fn log_msg_to_statsd(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
         client.count(format!("size.dst.{}", &header.dst_v4addr.unwrap()).as_ref(), size);
         client.count(format!("size.srs.{}", &header.src_v4addr.unwrap()).as_ref(), size);
         client.count("size", size);
-        // Actually send the message
     }
     Ok(())
 }

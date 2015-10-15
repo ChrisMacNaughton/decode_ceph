@@ -173,6 +173,7 @@ mod tests{
             carbon: None,
             elasticsearch: None,
             stdout: Some("stdout".to_string()),
+            influx: None,
             outputs: vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()],
             config_path: "".to_string(),
         };

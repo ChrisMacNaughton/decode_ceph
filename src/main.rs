@@ -11,6 +11,8 @@ extern crate users;
 extern crate simple_logger;
 extern crate time;
 extern crate yaml_rust;
+extern crate influent;
+
 mod serial;
 use serial::{CephPrimitive};
 mod crypto;
@@ -26,6 +28,10 @@ use std::net::{Ipv4Addr, Ipv6Addr, TcpStream};
 use std::str::FromStr;
 use std::fs::File;
 use yaml_rust::YamlLoader;
+use influent::create_client;
+use influent::client::Client;
+use influent::client::Credentials;
+use influent::measurement::{Measurement, Value};
 
 #[cfg(test)]
 mod tests{
@@ -167,6 +173,7 @@ mod tests{
             carbon: None,
             elasticsearch: None,
             stdout: Some("stdout".to_string()),
+            influx: None,
             outputs: vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()],
             config_path: "".to_string(),
         };
@@ -214,6 +221,7 @@ struct Args {
     carbon: Option<String>,
     elasticsearch: Option<String>,
     stdout: Option<String>,
+    influx: Option<Influx>,
     outputs: Vec<String>,
     config_path: String
 }
@@ -224,10 +232,18 @@ impl Args {
             carbon: None,
             elasticsearch: None,
             stdout: None,
+            influx: None,
             outputs: Vec::new(),
             config_path: "".to_string()
         }
     }
+}
+#[derive(Clone,Debug)]
+struct Influx {
+    user: String,
+    password: String,
+    host: String,
+    port: String
 }
 
 //TODO expose even more data
@@ -327,7 +343,12 @@ fn get_arguments() -> Args{
         _ => Some(cli_args.outputs),
     };
 
-    let output_types = vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()];
+    let influx = match config.influx {
+        Some(c) => Some(c),
+        None => None
+    };
+
+    let output_types = vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string(), "influx".to_string()];
     let mut final_outputs:Vec<String> = Vec::new();
     if let Some(ref out) = outputs {
         for output in out.iter() {
@@ -343,6 +364,7 @@ fn get_arguments() -> Args{
         carbon: carbon,
         elasticsearch: elasticsearch,
         stdout: stdout,
+        influx: influx,
         outputs: final_outputs,
         config_path: cli_args.config_path,
     }
@@ -374,6 +396,7 @@ fn get_cli_arguments() -> Args{
         carbon: parse_option("CARBON", &matches),
         elasticsearch: parse_option("ES", &matches),
         stdout: parse_option("STDOUT", &matches),
+        influx: None,
         config_path: match parse_option("CONFIG", &matches) {
             Some(path) => path,
             None => "/etc/default/decode_ceph.yaml".to_string(),
@@ -414,10 +437,23 @@ fn get_config() -> Result<Args, String>{
         None => Vec::new(),
     };
 
+    let influx_doc = doc["influx"].clone();
+    let influx_host = influx_doc["host"].as_str().unwrap_or("127.0.0.1");
+    let influx_port = influx_doc["port"].as_str().unwrap_or("8086");
+    let influx_password = influx_doc["password"].as_str().unwrap_or("root");
+    let influx_user = influx_doc["user"].as_str().unwrap_or("root");
+    let influx = Influx {
+        host: influx_host.to_string(),
+        port: influx_port.to_string(),
+        password: influx_password.to_string(),
+        user: influx_user.to_string(),
+    };
+
     return Ok(Args {
         carbon: carbon,
         elasticsearch: elasticsearch,
         stdout: stdout,
+        influx: Some(influx),
         config_path: "/etc/default/decode_ceph.yaml".to_string(),
         outputs: outputs,
     })
@@ -586,7 +622,7 @@ fn log_msg_to_carbon(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
 }
 
 fn log_msg_to_elasticsearch(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
-    if output_args.elasticsearch.is_some(){
+    if output_args.elasticsearch.is_some() && output_args.outputs.contains(&"elasticsearch".to_string()){
         let op = match msg.msg {
             serial::Message::OsdOp(ref osd_op) => osd_op,
             serial::Message::OsdSubop(ref sub_op) => sub_op,
@@ -628,11 +664,67 @@ fn log_msg_to_stdout(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
     Ok(())
 }
 
+fn log_msg_to_influx(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
+    if output_args.influx.is_some() && output_args.outputs.contains(&"influx".to_string()) {
+        let op = match msg.msg {
+            serial::Message::OsdOp(ref osd_op) => osd_op,
+            serial::Message::OsdSubop(ref sub_op) => sub_op,
+            _ => return Err("Bad type".to_string())
+        };
+
+        let influx = &output_args.influx.clone().unwrap();
+        let credentials = Credentials {
+            username: influx.user.as_ref(),
+            password: influx.password.as_ref(),
+            database: "ceph"
+        };
+        let host = format!("http://{}:{}",influx.host, influx.port);
+        let hosts = vec![host.as_ref()];
+        let client = create_client(credentials, hosts);
+
+
+
+        let src_addr: String = match header.src_v4addr{
+            Some(addr) => addr.to_string(),
+            None => {
+                match header.src_v6addr{
+                    Some(addr) => addr.to_string(),
+                    None => "".to_string(),
+                }
+            },
+        };
+
+        let dst_addr: String = match header.dst_v4addr{
+            Some(addr) => addr.to_string(),
+            None => {
+                match header.dst_v6addr{
+                    Some(addr) => addr.to_string(),
+                    None => "".to_string(),
+                }
+            },
+        };
+        let size = op.operation.size as f64;
+        let count = op.operation_count as i64;
+        let flags: String = format!("{:?}", op.flags).clone();
+        let mut measurement = Measurement::new("ceph");
+        measurement.add_tag("src_address", src_addr.as_ref());
+        measurement.add_tag("dst_address", dst_addr.as_ref());
+        measurement.add_field("size", Value::Float(size));
+        measurement.add_field("operation", Value::String(flags.as_ref()));
+        measurement.add_field("count", Value::Integer(count));
+
+        let res = client.write_one(measurement, None);
+        debug!("{:?}", res);
+    }
+    Ok(())
+}
+
 fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     //Process OSD operation packets
     let _ = log_msg_to_carbon(&header, &msg, output_args);
     let _ = log_msg_to_elasticsearch(&header, &msg, output_args);
     let _ = log_msg_to_stdout(&header, &msg, output_args);
+    let _ = log_msg_to_influx(&header, &msg, output_args);
     Ok(())
 }
 

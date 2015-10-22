@@ -211,23 +211,40 @@ macro_rules! parse_opt (
 
 #[derive(Clone,Debug)]
 struct Args {
-    carbon: Option<String>,
+    carbon: Option<Carbon>,
+    influx: Option<Influx>,
     elasticsearch: Option<String>,
     stdout: Option<String>,
     outputs: Vec<String>,
-    config_path: String
+    config_path: String,
 }
 
 impl Args {
     fn clean() -> Args {
         Args {
             carbon: None,
+            influx: None,
             elasticsearch: None,
             stdout: None,
             outputs: Vec::new(),
             config_path: "".to_string()
         }
     }
+}
+
+#[derive(Clone,Debug)]
+struct Influx {
+    user: String,
+    password: String,
+    host: String,
+    port: String
+}
+
+#[derive(Clone,Debug)]
+struct Carbon {
+    host: String,
+    port: String,
+    root_key: String,
 }
 
 //TODO expose even more data
@@ -298,13 +315,6 @@ fn get_arguments() -> Args{
     debug!("args: {:?}", cli_args);
     debug!("config: {:?}", config);
 
-    let carbon = match cli_args.carbon {
-        Some(c) => Some(c),
-        None => match config.carbon {
-            Some(c) => Some(c),
-            None => None,
-        },
-    };
     let elasticsearch = match cli_args.elasticsearch {
         Some(c) => Some(format!("http://{}/ceph/operations", c).to_string()),
         None => match config.elasticsearch {
@@ -327,7 +337,18 @@ fn get_arguments() -> Args{
         _ => Some(cli_args.outputs),
     };
 
-    let output_types = vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()];
+    let influx = match config.influx {
+        Some(c) => Some(c),
+        None => None
+    };
+
+    let carbon = match config.carbon {
+        Some(c) => Some(c),
+        None => None
+    };
+
+    let output_types = vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string(), "influx".to_string()];
+
     let mut final_outputs:Vec<String> = Vec::new();
     if let Some(ref out) = outputs {
         for output in out.iter() {
@@ -341,6 +362,7 @@ fn get_arguments() -> Args{
 
     Args{
         carbon: carbon,
+        influx: influx,
         elasticsearch: elasticsearch,
         stdout: stdout,
         outputs: final_outputs,
@@ -356,7 +378,7 @@ fn parse_option<'a, 'b>(option: &str, matches: &clap::ArgMatches<'a, 'b>) -> Opt
 }
 
 fn get_cli_arguments() -> Args{
-    let output_types = vec!["elasticsearch", "carbon", "stdout"];
+    let output_types = vec!["elasticsearch", "stdout"];
     let yaml = load_yaml!("cli.yaml");
     let matches = App::from_yaml(yaml).get_matches();
     let mut outputs:Vec<String> = Vec::new();
@@ -371,7 +393,8 @@ fn get_cli_arguments() -> Args{
         }
     }
     return Args{
-        carbon: parse_option("CARBON", &matches),
+        carbon: None,
+        influx: None,
         elasticsearch: parse_option("ES", &matches),
         stdout: parse_option("STDOUT", &matches),
         config_path: match parse_option("CONFIG", &matches) {
@@ -383,8 +406,7 @@ fn get_cli_arguments() -> Args{
 }
 
 fn get_config() -> Result<Args, String>{
-    let config_file = get_cli_arguments().config_path;
-    let mut f = try!(File::open(config_file).map_err(|e| e.to_string()));
+    let mut f = try!(File::open("/etc/default/decode_ceph.yaml").map_err(|e| e.to_string()));
 
     let mut s = String::new();
     try!(f.read_to_string(&mut s).map_err(|e| e.to_string()));
@@ -393,14 +415,49 @@ fn get_config() -> Result<Args, String>{
     let docs = match YamlLoader::load_from_str(&s){
         Ok(data) => data,
         Err(_) => {
-            return Err("Unable to load yaml data from config file".to_string());
+            error!("Unable to load yaml data from config file");
+            return Err("cannot load data from yaml".to_string());
         }
     };
 
     let doc = &docs[0];
-    parse_opt!(carbon, doc["carbon"]);
-    parse_opt!(elasticsearch, doc["elasticsearch"]);
+
+    let elasticsearch = match doc["elasticsearch"].as_str() {
+        Some(o) => Some(format!("http://{}/ceph/operations", o)),
+        None => None
+    };
+
     parse_opt!(stdout, doc["stdout"]);
+    let influx_doc = doc["influx"].clone();
+    let influx_host = influx_doc["host"].as_str().unwrap_or("127.0.0.1");
+    let influx_port = influx_doc["port"].as_str().unwrap_or("8086");
+    let influx_password = influx_doc["password"].as_str().unwrap_or("root");
+    let influx_user = influx_doc["user"].as_str().unwrap_or("root");
+    let influx = Influx {
+        host: influx_host.to_string(),
+        port: influx_port.to_string(),
+        password: influx_password.to_string(),
+        user: influx_user.to_string(),
+    };
+
+    let carbon_doc = doc["carbon"].clone();
+
+    let carbon_host = match carbon_doc["host"].as_str(){
+        Some(h) => Some(h),
+        None => None,
+    };
+
+    let carbon_port = carbon_doc["port"].as_str().unwrap_or("2003");
+    let root_key = carbon_doc["root_key"].as_str().unwrap_or("ceph");
+
+    let carbon = match carbon_host {
+        Some(h) => Some(Carbon {
+                host: h.to_string(),
+                port: carbon_port.to_string(),
+                root_key: root_key.to_string(),
+            }),
+        None => None
+    };
 
     let outputs: Vec<String> = match doc["outputs"].as_vec() {
         Some(o) => {
@@ -414,12 +471,13 @@ fn get_config() -> Result<Args, String>{
         None => Vec::new(),
     };
 
-    return Ok(Args {
+    Ok(Args {
         carbon: carbon,
         elasticsearch: elasticsearch,
         stdout: stdout,
-        config_path: "/etc/default/decode_ceph.yaml".to_string(),
+        influx: Some(influx),
         outputs: outputs,
+        config_path: "/etc/default/decode_ceph.yaml".to_string(),
     })
 }
 

@@ -666,10 +666,12 @@ fn log_msg_to_carbon(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
             _ => return Err("Bad type".to_string())
         };
 
-        let carbon_host = try!(output_args.host.clone());
-        let carbon_port = try!(output_args.port.clone());
+        let carbon = output_args.clone().carbon.unwrap();
+
+        let carbon_host = carbon.host.clone();
+        let carbon_port = carbon.port.clone();
         let carbon_url = format!("{}:{}", carbon_host, carbon_port);
-        let carbon_root_key = try!(output_args.root_key.clone());
+        let carbon_root_key = carbon.root_key.clone();
 
         let milliseconds_since_epoch = get_time();
         let doc = Document{

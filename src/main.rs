@@ -11,6 +11,8 @@ extern crate users;
 extern crate simple_logger;
 extern crate time;
 extern crate yaml_rust;
+extern crate influent;
+
 mod serial;
 use serial::{CephPrimitive};
 mod crypto;
@@ -26,6 +28,10 @@ use std::net::{Ipv4Addr, Ipv6Addr, TcpStream};
 use std::str::FromStr;
 use std::fs::File;
 use yaml_rust::YamlLoader;
+use influent::create_client;
+use influent::client::Client;
+use influent::client::Credentials;
+use influent::measurement::{Measurement, Value};
 
 #[cfg(test)]
 mod tests{
@@ -167,6 +173,7 @@ mod tests{
             carbon: None,
             elasticsearch: None,
             stdout: Some("stdout".to_string()),
+            influx: None,
             outputs: vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()],
             config_path: "".to_string(),
         };
@@ -260,6 +267,35 @@ struct Document<'a>{
 
 // JSON value representation
 impl<'a> Document<'a>{
+    fn to_carbon_string(&self)->Result<String, String>{
+        let src_addr: String = match self.header.src_v4addr{
+            Some(addr) => addr.to_string(),
+            None => {
+                match self.header.src_v6addr{
+                    Some(addr) => addr.to_string(),
+                    None => "".to_string(),
+                }
+            },
+        };
+
+        let dst_addr: String = match self.header.dst_v4addr{
+            Some(addr) => addr.to_string(),
+            None => {
+                match self.header.dst_v6addr{
+                    Some(addr) => addr.to_string(),
+                    None => "".to_string(),
+                }
+            },
+        };
+
+        return Ok(format!("{}.{}.{:?}.{}.{}.{}",
+            src_addr,
+            dst_addr,
+            self.flags,
+            self.operation_count,
+            self.size,
+            self.timestamp));
+    }
     fn to_json(&self)->Result<String, String>{
 
         let src_addr: String = match self.header.src_v4addr{
@@ -471,7 +507,7 @@ fn get_config() -> Result<Args, String>{
         None => Vec::new(),
     };
 
-    Ok(Args {
+    return Ok(Args {
         carbon: carbon,
         elasticsearch: elasticsearch,
         stdout: stdout,
@@ -584,11 +620,11 @@ fn log_to_stdout(){
 
 }
 
-fn log_packet_to_carbon(server: &str, port: u16, data: String)->Result<(), String>{
+fn log_packet_to_carbon(carbon_url: &str, data: String)->Result<(), String>{
     //Carbon is plaintext
     //echo "local.random.diceroll 4 `date +%s`" | nc -q0 ${SERVER} ${PORT}
 
-    let mut stream = try!(TcpStream::connect((server, port)).map_err(|e| e.to_string()));
+    let mut stream = try!(TcpStream::connect(carbon_url).map_err(|e| e.to_string()));
     let bytes_written = try!(stream.write(&data.into_bytes()[..]).map_err(|e| e.to_string()));
     info!("Wrote: {} bytes to graphite", &bytes_written);
 
@@ -629,22 +665,28 @@ fn log_msg_to_carbon(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
             serial::Message::OsdSubop(ref sub_op) => sub_op,
             _ => return Err("Bad type".to_string())
         };
-        let now = time::now();
-        let time_spec = now.to_timespec();
-        let carbon_url = output_args.carbon.clone().unwrap();
-        let (carbon_host, carbon_port) = try!(parse_carbon_url(&carbon_url));
-        let graphite_data = format!("ceph.{}.{:?}.{} {}",
-            &header.src_v4addr.unwrap(),
-            &op.flags,
-            &op.operation.size,
-            time_spec.sec);
-        try!(log_packet_to_carbon(&carbon_host, carbon_port, graphite_data));
+
+        let carbon_host = try!(output_args.host.clone());
+        let carbon_port = try!(output_args.port.clone());
+        let carbon_url = format!("{}:{}", carbon_host, carbon_port);
+        let carbon_root_key = try!(output_args.root_key.clone());
+
+        let milliseconds_since_epoch = get_time();
+        let doc = Document{
+            header: header,
+            flags: op.flags,
+            operation_count: op.operation_count,
+            size: op.operation.size,
+            timestamp: milliseconds_since_epoch,
+        };
+        let carbon_data = format!("{}.{}", carbon_root_key, try!(doc.to_carbon_string()));
+        try!(log_packet_to_carbon(&carbon_url, carbon_data));
     }
     Ok(())
 }
 
 fn log_msg_to_elasticsearch(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
-    if output_args.elasticsearch.is_some(){
+    if output_args.elasticsearch.is_some() && output_args.outputs.contains(&"elasticsearch".to_string()){
         let op = match msg.msg {
             serial::Message::OsdOp(ref osd_op) => osd_op,
             serial::Message::OsdSubop(ref sub_op) => sub_op,
@@ -686,11 +728,67 @@ fn log_msg_to_stdout(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
     Ok(())
 }
 
+fn log_msg_to_influx(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
+    if output_args.influx.is_some() && output_args.outputs.contains(&"influx".to_string()) {
+        let op = match msg.msg {
+            serial::Message::OsdOp(ref osd_op) => osd_op,
+            serial::Message::OsdSubop(ref sub_op) => sub_op,
+            _ => return Err("Bad type".to_string())
+        };
+
+        let influx = &output_args.influx.clone().unwrap();
+        let credentials = Credentials {
+            username: influx.user.as_ref(),
+            password: influx.password.as_ref(),
+            database: "ceph"
+        };
+        let host = format!("http://{}:{}",influx.host, influx.port);
+        let hosts = vec![host.as_ref()];
+        let client = create_client(credentials, hosts);
+
+
+
+        let src_addr: String = match header.src_v4addr{
+            Some(addr) => addr.to_string(),
+            None => {
+                match header.src_v6addr{
+                    Some(addr) => addr.to_string(),
+                    None => "".to_string(),
+                }
+            },
+        };
+
+        let dst_addr: String = match header.dst_v4addr{
+            Some(addr) => addr.to_string(),
+            None => {
+                match header.dst_v6addr{
+                    Some(addr) => addr.to_string(),
+                    None => "".to_string(),
+                }
+            },
+        };
+        let size = op.operation.size as f64;
+        let count = op.operation_count as i64;
+        let flags: String = format!("{:?}", op.flags).clone();
+        let mut measurement = Measurement::new("ceph");
+        measurement.add_tag("src_address", src_addr.as_ref());
+        measurement.add_tag("dst_address", dst_addr.as_ref());
+        measurement.add_field("size", Value::Float(size));
+        measurement.add_field("operation", Value::String(flags.as_ref()));
+        measurement.add_field("count", Value::Integer(count));
+
+        let res = client.write_one(measurement, None);
+        debug!("{:?}", res);
+    }
+    Ok(())
+}
+
 fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     //Process OSD operation packets
     let _ = log_msg_to_carbon(&header, &msg, output_args);
     let _ = log_msg_to_elasticsearch(&header, &msg, output_args);
     let _ = log_msg_to_stdout(&header, &msg, output_args);
+    let _ = log_msg_to_influx(&header, &msg, output_args);
     Ok(())
 }
 

@@ -267,7 +267,7 @@ struct Document<'a>{
 
 // JSON value representation
 impl<'a> Document<'a>{
-    fn to_carbon_string(&self)->Result<String, String>{
+    fn to_carbon_string(&self, root_key: &str)->Result<String, String>{
         let src_addr: String = match self.header.src_v4addr{
             Some(addr) => addr.to_string(),
             None => {
@@ -287,14 +287,17 @@ impl<'a> Document<'a>{
                 }
             },
         };
+        //NOTE: carbon uses epoch time aka seconds since epoch not milliseconds
+        let carbon_string = format!( r#"
+{root_key}.src_ip {} {timestamp}
+{root_key}.dst_ip {} {timestamp}
+{root_key}.flags {:?} {timestamp}
+{root_key}.operation_count {} {timestamp}
+{root_key}.size {} {timestamp}
+  "#, src_addr, dst_addr, self.flags, self.operation_count, self.size, root_key = root_key,
+  timestamp = (self.timestamp/1000));
 
-        return Ok(format!("{}.{}.{:?}.{}.{}.{}",
-            src_addr,
-            dst_addr,
-            self.flags,
-            self.operation_count,
-            self.size,
-            self.timestamp));
+        return Ok(carbon_string);
     }
     fn to_json(&self)->Result<String, String>{
 
@@ -681,7 +684,7 @@ fn log_msg_to_carbon(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
             size: op.operation.size,
             timestamp: milliseconds_since_epoch,
         };
-        let carbon_data = format!("{}.{}", carbon_root_key, try!(doc.to_carbon_string()));
+        let carbon_data = format!("{}.{}", carbon_root_key, try!(doc.to_carbon_string(&carbon.root_key)));
         try!(log_packet_to_carbon(&carbon_url, carbon_data));
     }
     Ok(())

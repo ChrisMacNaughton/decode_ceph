@@ -6,7 +6,6 @@ authors = ["Chris Holcombe <xfactor973@gmail.com>", "Chris MacNaughton <chmacnau
 [dependencies]
 bitflags = "*"
 byteorder = "*"
-clap = {version = "*", features = ["yaml"]}
 crc = "*"
 ease = "*"
 enum_primitive = "*"
@@ -17,5 +16,5 @@ rust-crypto = "*"
 simple_logger = "*"
 time = "*"
 users = "*"
-yaml-rust = "*"
 influent = "0.2"
+output_args = {git = "https://github.com/ChrisMacNaughton/ceph_cli_args.git"}

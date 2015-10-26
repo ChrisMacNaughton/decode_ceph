@@ -1,16 +1,15 @@
 #![allow(dead_code)]
 #[macro_use] extern crate enum_primitive;
 #[macro_use] extern crate bitflags;
-#[macro_use] extern crate clap;
 #[macro_use] extern crate log;
 extern crate byteorder;
 extern crate ease;
 extern crate num;
+extern crate output_args;
 extern crate pcap;
 extern crate users;
 extern crate simple_logger;
 extern crate time;
-extern crate yaml_rust;
 extern crate influent;
 
 mod serial;
@@ -18,7 +17,6 @@ use serial::{CephPrimitive};
 mod crypto;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use clap::App;
 use log::LogLevel;
 use pcap::{Capture, Device};
 
@@ -26,12 +24,12 @@ use std::io::Cursor;
 use std::io::prelude::*;
 use std::net::{Ipv4Addr, Ipv6Addr, TcpStream};
 use std::str::FromStr;
-use std::fs::File;
-use yaml_rust::YamlLoader;
+
 use influent::create_client;
 use influent::client::Client;
 use influent::client::Credentials;
 use influent::measurement::{Measurement, Value};
+use output_args::*;
 
 #[cfg(test)]
 mod tests{
@@ -207,53 +205,6 @@ mod tests{
     }
 }
 
-macro_rules! parse_opt (
-    ($name:ident, $doc:expr) => (
-    let $name: Option<String> = match $doc.as_str() {
-        Some(o) => Some(o.to_string()),
-        None => None
-    }
-    );
-);
-
-#[derive(Clone,Debug)]
-struct Args {
-    carbon: Option<Carbon>,
-    influx: Option<Influx>,
-    elasticsearch: Option<String>,
-    stdout: Option<String>,
-    outputs: Vec<String>,
-    config_path: String,
-}
-
-impl Args {
-    fn clean() -> Args {
-        Args {
-            carbon: None,
-            influx: None,
-            elasticsearch: None,
-            stdout: None,
-            outputs: Vec::new(),
-            config_path: "".to_string()
-        }
-    }
-}
-
-#[derive(Clone,Debug)]
-struct Influx {
-    user: String,
-    password: String,
-    host: String,
-    port: String
-}
-
-#[derive(Clone,Debug)]
-struct Carbon {
-    host: String,
-    port: String,
-    root_key: String,
-}
-
 //TODO expose even more data
 #[derive(Debug)]
 struct Document<'a>{
@@ -342,179 +293,8 @@ pub struct PacketHeader{
     pub dst_v6addr: Option<Ipv6Addr>,
 }
 
-fn get_arguments() -> Args{
-    let cli_args = get_cli_arguments();
-    let config = match get_config() {
-        Ok(a) => a,
-        Err(_) => Args::clean(),
-    };
-    debug!("args: {:?}", cli_args);
-    debug!("config: {:?}", config);
-
-    let elasticsearch = match cli_args.elasticsearch {
-        Some(c) => Some(format!("http://{}/ceph/operations", c).to_string()),
-        None => match config.elasticsearch {
-            Some(c) => Some(format!("http://{}/ceph/operations", c).to_string()),
-            None => None,
-        },
-    };
-    let stdout = match cli_args.stdout {
-        Some(c) => Some(c),
-        None => match config.stdout {
-            Some(c) => Some(c),
-            None => None,
-        },
-    };
-    let outputs = match cli_args.outputs.len() {
-        0 => match config.outputs.len() {
-            0 => Some(Vec::new()),
-            _ => Some(config.outputs),
-        },
-        _ => Some(cli_args.outputs),
-    };
-
-    let influx = match config.influx {
-        Some(c) => Some(c),
-        None => None
-    };
-
-    let carbon = match config.carbon {
-        Some(c) => Some(c),
-        None => None
-    };
-
-    let output_types = vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string(), "influx".to_string()];
-
-    let mut final_outputs:Vec<String> = Vec::new();
-    if let Some(ref out) = outputs {
-        for output in out.iter() {
-            if output_types.contains(output) {
-                final_outputs.push(output.clone());
-            } else {
-                error!("{} is not a valid output type", output);
-            }
-        }
-    }
-
-    Args{
-        carbon: carbon,
-        influx: influx,
-        elasticsearch: elasticsearch,
-        stdout: stdout,
-        outputs: final_outputs,
-        config_path: cli_args.config_path,
-    }
-}
-
-fn parse_option<'a, 'b>(option: &str, matches: &clap::ArgMatches<'a, 'b>) -> Option<String>{
-    match matches.value_of(option){
-        Some(opt) => Some(opt.to_string()),
-        None => None,
-    }
-}
-
-fn get_cli_arguments() -> Args{
-    let output_types = vec!["elasticsearch", "stdout"];
-    let yaml = load_yaml!("cli.yaml");
-    let matches = App::from_yaml(yaml).get_matches();
-    let mut outputs:Vec<String> = Vec::new();
-
-    if let Some(ref out) = matches.values_of("OUTPUTS") {
-        for output in out.iter() {
-            if output_types.contains(output) {
-                outputs.push(output.to_string());
-            } else {
-                error!("{} is not a valid output type", output);
-            }
-        }
-    }
-    return Args{
-        carbon: None,
-        influx: None,
-        elasticsearch: parse_option("ES", &matches),
-        stdout: parse_option("STDOUT", &matches),
-        config_path: match parse_option("CONFIG", &matches) {
-            Some(path) => path,
-            None => "/etc/default/decode_ceph.yaml".to_string(),
-        },
-        outputs: outputs,
-    };
-}
-
-fn get_config() -> Result<Args, String>{
-    let mut f = try!(File::open("/etc/default/decode_ceph.yaml").map_err(|e| e.to_string()));
-
-    let mut s = String::new();
-    try!(f.read_to_string(&mut s).map_err(|e| e.to_string()));
-
-    //Remove this hack when the new version of yaml_rust releases to get the real error msg
-    let docs = match YamlLoader::load_from_str(&s){
-        Ok(data) => data,
-        Err(_) => {
-            error!("Unable to load yaml data from config file");
-            return Err("cannot load data from yaml".to_string());
-        }
-    };
-
-    let doc = &docs[0];
-
-    let elasticsearch = match doc["elasticsearch"].as_str() {
-        Some(o) => Some(format!("http://{}/ceph/operations", o)),
-        None => None
-    };
-
-    parse_opt!(stdout, doc["stdout"]);
-    let influx_doc = doc["influx"].clone();
-    let influx_host = influx_doc["host"].as_str().unwrap_or("127.0.0.1");
-    let influx_port = influx_doc["port"].as_str().unwrap_or("8086");
-    let influx_password = influx_doc["password"].as_str().unwrap_or("root");
-    let influx_user = influx_doc["user"].as_str().unwrap_or("root");
-    let influx = Influx {
-        host: influx_host.to_string(),
-        port: influx_port.to_string(),
-        password: influx_password.to_string(),
-        user: influx_user.to_string(),
-    };
-
-    let carbon_doc = doc["carbon"].clone();
-
-    let carbon_host = match carbon_doc["host"].as_str(){
-        Some(h) => Some(h),
-        None => None,
-    };
-
-    let carbon_port = carbon_doc["port"].as_str().unwrap_or("2003");
-    let root_key = carbon_doc["root_key"].as_str().unwrap_or("ceph");
-
-    let carbon = match carbon_host {
-        Some(h) => Some(Carbon {
-                host: h.to_string(),
-                port: carbon_port.to_string(),
-                root_key: root_key.to_string(),
-            }),
-        None => None
-    };
-
-    let outputs: Vec<String> = match doc["outputs"].as_vec() {
-        Some(o) => {
-            o.iter().map( |x|
-                match x.as_str() {
-                    Some(o) => o.to_string(),
-                    None => "".to_string(),
-                }
-            ).collect()
-        },
-        None => Vec::new(),
-    };
-
-    return Ok(Args {
-        carbon: carbon,
-        elasticsearch: elasticsearch,
-        stdout: stdout,
-        influx: Some(influx),
-        outputs: outputs,
-        config_path: "/etc/default/decode_ceph.yaml".to_string(),
-    })
+fn get_arguments() -> output_args::Args {
+    output_args::get_args()
 }
 
 fn check_user()->Result<(), ()>{

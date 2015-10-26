@@ -33,12 +33,15 @@ use output_args::*;
 
 #[cfg(test)]
 mod tests{
+    extern crate output_args;
     extern crate pcap;
 
     use std::io::Cursor;
     use std::net::Ipv4Addr;
     use std::path::Path;
     use pcap::{Capture, Device};
+    use log;
+    use output_args::*;
     use super::serial;
 
     #[test]
@@ -167,13 +170,14 @@ mod tests{
 
     #[test]
     fn test_pcap_parsing(){
-        let args = super::Args{
+        let args = output_args::Args {
             carbon: None,
             elasticsearch: None,
             stdout: Some("stdout".to_string()),
             influx: None,
             outputs: vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()],
             config_path: "".to_string(),
+            log_level: log::LogLevel::Info
         };
         //Set the cursor so the parsing doesn't fail
         let mut cap = Capture::from_file(Path::new("ceph.pcap")).unwrap();

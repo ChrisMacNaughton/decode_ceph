@@ -199,14 +199,10 @@ impl serial::CephPrimitive for AuthTicket{
         let global_id = try!(cursor.read_u64::<LittleEndian>());
         let auid = try!(cursor.read_u64::<LittleEndian>());
 
-        let creation_tv_sec = try!(cursor.read_u32::<LittleEndian>());
-        let creation_tv_nsec = try!(cursor.read_u32::<LittleEndian>());
+        let created = try!(serial::Utime::read_from_wire(cursor));
+        let renew_after = try!(serial::Utime::read_from_wire(cursor));
+        let expires = try!(serial::Utime::read_from_wire(cursor));
 
-        let renew_tv_sec = try!(cursor.read_u32::<LittleEndian>());
-        let renew_tv_nsec = try!(cursor.read_u32::<LittleEndian>());
-
-        let expire_tv_sec = try!(cursor.read_u32::<LittleEndian>());
-        let expire_tv_nsec = try!(cursor.read_u32::<LittleEndian>());
         let caps = AuthCapsInfo::read_from_wire(cursor).unwrap();
 
         return Ok(
@@ -214,18 +210,9 @@ impl serial::CephPrimitive for AuthTicket{
                 name: name.unwrap(),
                 global_id: global_id,
                 auid: auid,
-                created: serial::Utime{
-                    tv_sec: creation_tv_sec,
-                    tv_nsec: creation_tv_nsec,
-                },
-                renew_after: serial::Utime{
-                    tv_sec: renew_tv_sec,
-                    tv_nsec: renew_tv_nsec,
-                },
-                expires: serial::Utime{
-                    tv_sec: expire_tv_sec,
-                    tv_nsec: expire_tv_nsec,
-                },
+                created: created,
+                renew_after: renew_after,
+                expires: expires,
                 caps: caps,
                 flags: 0,
             }
@@ -240,17 +227,10 @@ impl serial::CephPrimitive for AuthTicket{
         try!(buffer.write_u64::<LittleEndian>(self.global_id));
         try!(buffer.write_u64::<LittleEndian>(self.auid));
 
-        //Send the creation time
-        try!(buffer.write_u32::<LittleEndian>(self.created.tv_sec));
-        try!(buffer.write_u32::<LittleEndian>(self.created.tv_nsec));
-
-        //Send the renew time
-        try!(buffer.write_u32::<LittleEndian>(self.renew_after.tv_sec));
-        try!(buffer.write_u32::<LittleEndian>(self.renew_after.tv_nsec));
-
-        //Send the expire time
-        try!(buffer.write_u32::<LittleEndian>(self.expires.tv_sec));
-        try!(buffer.write_u32::<LittleEndian>(self.expires.tv_nsec));
+        //Send the times
+        buffer.extend(try!(self.created.write_to_wire()));
+        buffer.extend(try!(self.renew_after.write_to_wire()));
+        buffer.extend(try!(self.expires.write_to_wire()));
 
         return Ok(buffer);
     }

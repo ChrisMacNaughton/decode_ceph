@@ -148,7 +148,7 @@ impl From<io::Error> for SerialError {
 }
 
 pub trait CephPrimitive {
-	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>;
+	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError> where Self: Sized;
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>;
 }
 

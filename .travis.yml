@@ -8,6 +8,11 @@ rust:
   - beta
   - stable
 
+# whitelist
+branches:
+  only:
+    - master
+
 matrix:
   allow_failures:
     - rust: beta

@@ -32,8 +32,7 @@ mod tests{
     #[test]
     fn test_connect(){
         //Connect to monitor port
-        /*
-        let mut stream = TcpStream::connect("10.0.3.144:6789").unwrap();
+        let mut stream = TcpStream::connect("10.0.3.244:6789").unwrap();
         let mut buf: Vec<u8> = Vec::new();
         //recv banner
         (&mut stream).take(9).read_to_end(&mut buf).unwrap();
@@ -45,16 +44,22 @@ mod tests{
         println!("Wrote {} bytes back to Ceph", bytes_written);
 
         //Send sockaddr_storage
-        //let my_addr = super::EntityAddr{
-
-        //};
-        //let my_addr = Ipv4Addr::new(192,168,1,6);
-        //let mut bytes_written = super::send_addr_info(&mut stream, Some(my_addr), None).unwrap();
-        //println!("Wrote {} sock_addr bytes back to Ceph", bytes_written);
+        let my_addr = super::EntityAddr{
+            port: 0,
+            nonce: 100,
+            v4addr: Some(Ipv4Addr::new(192,168,1,6)),
+            v6addr: None,
+        };
+        let my_addr_bytes = my_addr.write_to_wire().unwrap();
+        bytes_written = stream.write(&my_addr_bytes).unwrap();
+        println!("Wrote {} sock_addr bytes back to Ceph", bytes_written);
 
         //Get server sockaddr_storage
-        //let server_entity_addr = super::recv_addr_info(&mut stream).unwrap();
-        //println!("Server entity_addr: {:?}", server_entity_addr);
+        let mut server_addr_reply_buffer = Vec::new();
+        (&mut stream).take(136).read_to_end(&mut server_addr_reply_buffer).unwrap();
+        let mut server_addr_cursor = Cursor::new(&mut server_addr_reply_buffer[..]);
+        let server_entity_addr = super::EntityAddr::read_from_wire(&mut server_addr_cursor);
+        println!("Server entity_addr: {:?}", server_entity_addr);
 
         let connect = super::CephMsgConnect{
             features: super::CEPH_CLIENT_DEFAULT, //Wireshark is showing not all bits are set
@@ -100,13 +105,75 @@ mod tests{
         let auth_client_ticket = crypto::AuthTicket::new(600.0);
         let auth_ticket_bytes = auth_client_ticket.write_to_wire().unwrap();
 
+        //  p->a : principal, principal_addr.  authenticate me!
         bytes_written = stream.write(&auth_ticket_bytes).unwrap();
         println!("Wrote {:?} auth ticket bytes", bytes_written);
-        */
     }
 
     #[test]
     fn test_connect_reply(){
+
+    }
+
+    #[test]
+    fn test_decode_cephx(){
+        //Client msg to the server
+        let mut auth_packet: Vec<u8> = vec![
+            0x07, //CephMsg
+            0x01, //Ready
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x11,0x00,0x7f,0x00,0x01,0x00,0x3c,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x08,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x01,0x00,0x00,0x00,0x69,
+            0x4b,0xab,0xe2,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x1e,0x00,0x00,0x00,0x01,0x01,0x00,0x00,0x00,
+            0x02,0x00,0x00,0x00,0x08,0x00,0x00,0x00,0x05,0x00,0x00,0x00,0x61,0x64,0x6d,0x69,0x6e,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xc5,0x48,0x27,0x28,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01
+        ];
+        let mut cursor = Cursor::new(&auth_packet[..]);
+        let msg = super::CephMsgrMsg::read_from_wire(&mut cursor);
+        println!("{:?}", msg);
+
+        //Ceph sends back an CephMsgTagAck
+
+        //Then we get the reply
+        //Ok now the reply from the server
+        let mut auth_packet_reply: Vec<u8> = vec![
+            0x07,0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x12,0x00,0xc4,0x00,0x01,0x00,0xce,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x01,0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x58,
+            0x31,0xba,0x7c,
+
+            0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x13,0x10,0x00,0x00,0x00,0x00,0x00,0x00,0xb6,
+            0x00,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x01,0x01,0x00,0x00,0x00,0x20,0x00,0x00,
+            0x00,0x01,0x30,0x00,0x00,0x00,0x4f,0xb3,0x63,0x3f,0x60,0x5f,0xf9,0x6c,0x3f,0x90,0xeb,
+            0x4b,0x00,0xa2,0x6d,0x7f,0x47,0xb5,0xb8,0x16,0xf2,0x35,0xda,0xd0,0xf3,0xdb,0xb6,0xb9,
+            0x53,0x79,0xbf,0x48,0x21,0xa9,0x9b,0x05,0x6d,0xa3,0xbb,0xda,0x07,0xe5,0xdb,0x72,0xf4,
+            0xb4,0xa6,0x68,0x00,0x6d,0x00,0x00,0x00,0x01,0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x60,0x00,0x00,0x00,0x68,0x17,0xd5,0xda,0xec,0xd2,0x9c,0xdd,0xce,0x89,0xd4,0x55,0xa0,
+            0x21,0x45,0x9e,0x75,0xef,0xee,0x6f,0x89,0x5d,0x2c,0x6c,0x44,0x39,0x27,0x74,0x3b,0x48,
+            0xb5,0x31,0xfd,0x3f,0xeb,0xe2,0xb6,0x38,0xd8,0x52,0xc7,0x99,0xbe,0x75,0x80,0x83,0x07,
+            0x0b,0x52,0xaa,0x3a,0x3c,0xd9,0x4f,0xa5,0x41,0x0f,0xc3,0xe8,0xee,0x57,0x25,0x2e,0x0c,
+            0x76,0x47,0xfb,0x13,0x57,0x6d,0x2c,0xbf,0x1d,0xec,0x27,0xe8,0xf6,0x87,0xcf,0x0d,0x28,
+            0x83,0xe8,0x88,0x9d,0xce,0xe5,0x66,0xfa,0xd0,0x02,0xca,0x54,0x91,0xf4,0x08,0x00,0x00,
+            0x00,0x00,0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x13,0x10,0x00,0x00,0x00,0x00,0x00,
+            0x00,0xb6,0x00,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x01,0x01,0x00,0x00,0x00,0x20,
+            0x00,0x00,0x00,0x01,0x30,0x00,0x00,0x00,0x4f,0xb3,0x63,0x3f,0x60,0x5f,0xf9,0x6c,0x3f,
+            0x90,0xeb,0x4b,0x00,0xa2,0x6d,0x7f,0x47,0xb5,0xb8,0x16,0xf2,0x35,0xda,0xd0,0xf3,0xdb,
+            0xb6,0xb9,0x53,0x79,0xbf,0x48,0x21,0xa9,0x9b,0x05,0x6d,0xa3,0xbb,0xda,0x07,0xe5,0xdb,
+            0x72,0xf4,0xb4,0xa6,0x68,0x00,0x6d,0x00,0x00,0x00,0x01,0x02,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x60,0x00,0x00,0x00,0x68,0x17,0xd5,0xda,0xec,0xd2,0x9c,0xdd,0xce,0x89,0xd4,
+            0x55,0xa0,0x21,0x45,0x9e,0x75,0xef,0xee,0x6f,0x89,0x5d,0x2c,0x6c,0x44,0x39,0x27,0x74,
+            0x3b,0x48,0xb5,0x31,0xfd,0x3f,0xeb,0xe2,0xb6,0x38,0xd8,0x52,0xc7,0x99,0xbe,0x75,0x80,
+            0x83,0x07,0x0b,0x52,0xaa,0x3a,0x3c,0xd9,0x4f,0xa5,0x41,0x0f,0xc3,0xe8,0xee,0x57,0x25,
+            0x2e,0x0c,0x76,0x47,0xfb,0x13,0x57,0x6d,0x2c,0xbf,0x1d,0xec,0x27,0xe8,0xf6,0x87,0xcf,
+            0x0d,0x28,0x83,0xe8,0x88,0x9d,0xce,0xe5,0x66,0xfa,0xd0,0x02,0xca,0x54,0x91,0xf4,0x08,
+            0x00,0x00,0x00,0x00,0x57,0xbb,0xf7,0xa8,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01
+        ];
+        let mut reply_cursor = Cursor::new(&auth_packet_reply[..]);
+        let reply_msg = super::CephMsgrMsg::read_from_wire(&mut reply_cursor);
+        println!("{:?}", reply_msg);
 
     }
 
@@ -384,10 +451,13 @@ pub enum CephEntity{
 }
 }
 
-#[derive(Debug, Clone)]
+enum_from_primitive!{
+#[repr(u32)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 enum Crypto {
     None = 0,
     Aes = 1,
+}
 }
 
 enum_from_primitive!{
@@ -575,7 +645,7 @@ bitflags!{
 
 enum_from_primitive!{
 #[repr(u32)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CephAuthProtocol{
     CephAuthUnknown = 0,
     CephAuthNone = 1,
@@ -620,6 +690,8 @@ pub enum CephMsg{
 
 #[derive(Debug,Eq,PartialEq)]
 pub enum Message{
+    Auth(CephAuthOperation),
+    AuthReply(CephAuthOperationReply),
     Paxos(PaxosMessage),
     Command,
     CommandReply,
@@ -690,6 +762,16 @@ pub enum Message{
 //Decode the msg from the wire and return the correct variant
 fn read_message_from_wire<R: Read>(cursor: &mut R, msg_type: &CephMsgType) -> Result<Message, SerialError>{
     match msg_type{
+        &CephMsgType::MsgAuth => {
+            debug!("CephAuthOperation");
+            let authop = try!(CephAuthOperation::read_from_wire(cursor));
+            return Ok(Message::Auth(authop));
+        },
+        &CephMsgType::MsgAuthReply => {
+            debug!("CephAuthOperationReply");
+            let auth_reply = try!(CephAuthOperationReply::read_from_wire(cursor));
+            return Ok(Message::AuthReply(auth_reply));
+        },
         &CephMsgType::MsgOsdOp => {
             debug!("CephOsdOperation");
             let osdop = try!(CephOsdOperation::read_from_wire(cursor));
@@ -746,6 +828,22 @@ fn write_message_to_wire(msg: Message) -> Result<Vec<u8>, SerialError>{
 enum_from_primitive! {
 #[derive(Debug, Clone,Eq,PartialEq)]
 pub enum CephMsgType{
+    //MsgShutdown = 1 ,
+    //MsgPing = 2,
+    /* client <-> monitor */
+    MsgMonMap = 4,
+    MsgMonGetMap = 5,
+    MsgMonGetOsdmap = 6,
+    MsgMonMetadata = 7,
+    MsgStatfs = 13,
+    MsgStatfsReply = 14,
+    MsgMonSubscribe = 15,
+    MsgMonSubscribeAck = 16,
+    MsgAuth = 17,
+    MsgAuthReply = 18,
+    MsgMonGetVersion =  19,
+    MsgMonGetVersionReply = 20,
+
     MsgPaxos = 40,
     MsgOsdMap = 41,
     MsgOsdOp = 42,
@@ -773,8 +871,7 @@ pub enum CephMsgType{
     MsgMonProbe= 67,
     MsgMonJoin = 68,
     MsgMonSync = 69,
-
-
+    // OSD
     MsgOsdPing = 70,
     MsgOsdBoot = 71,
     MsgOsdFailure = 72,
@@ -1388,6 +1485,7 @@ impl CephPrimitive for CephMsgHeader{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
         let sequenece_num = try!(cursor.read_u64::<LittleEndian>());
         let transcation_id = try!(cursor.read_u64::<LittleEndian>());
+
         let msg_type_bits = try!(cursor.read_u16::<LittleEndian>());
         //debug!("msg_type bits: {:?}", &msg_type_bits);
         let msg_type = match CephMsgType::from_u16(msg_type_bits){
@@ -1514,6 +1612,96 @@ impl CephPrimitive for CephMsgFooter{
     }
 }
 
+#[derive(Debug,Eq,PartialEq)]
+pub struct CephAuthOperation {
+    protocol: CephAuthProtocol,
+    auth_data: Vec<u8>,
+    monmap_epoch: u32, // map epoch  (32bits -> 13 epochs/second for 10 years)
+}
+
+impl CephPrimitive for CephAuthOperation{
+    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let mut auth_data: Vec<u8> = Vec::new();
+
+        let authorizer_bits = try!(cursor.read_u32::<LittleEndian>());
+        let authorizer_protocol = match CephAuthProtocol::from_u32(authorizer_bits){
+            Some(authorizer_protocol) => authorizer_protocol,
+            None => {
+                return Err(SerialError::new(format!("Unable to convert {:?} to authorizer_protocol", authorizer_bits)));
+            }
+        };
+
+        let auth_data_len = try!(cursor.read_u32::<LittleEndian>());
+
+        for _ in 0..auth_data_len{
+            let b = try!(cursor.read_u8());
+            auth_data.push(b);
+        }
+        let monmap_epoch = try!(cursor.read_u32::<LittleEndian>());
+
+        return Ok(CephAuthOperation{
+            protocol: authorizer_protocol,
+            auth_data: auth_data,
+            monmap_epoch: monmap_epoch,
+        });
+
+    }
+    fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer: Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct CephAuthOperationReply {
+    protocol: CephAuthProtocol,
+    result: i32,
+    global_id: u64,
+    result_msg: String,
+    result_buffer: Vec<u8>,
+}
+
+impl CephPrimitive for CephAuthOperationReply{
+    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let authorizer_bits = try!(cursor.read_u32::<LittleEndian>());
+        let authorizer_protocol = match CephAuthProtocol::from_u32(authorizer_bits){
+            Some(authorizer_protocol) => authorizer_protocol,
+            None => {
+                return Err(SerialError::new(format!("Unable to convert {:?} to authorizer_protocol", authorizer_bits)));
+            }
+        };
+
+        let result = try!(cursor.read_i32::<LittleEndian>());
+
+        let global_id = try!(cursor.read_u64::<LittleEndian>());
+
+        let result_msg_len = try!(cursor.read_u32::<LittleEndian>());
+        let mut msg_buffer: Vec<u8> = Vec::with_capacity(result_msg_len as usize);
+
+        for _ in 0..result_msg_len{
+            let b = try!(cursor.read_u8());
+            msg_buffer.push(b);
+        }
+        let result_msg = String::from_utf8_lossy(&msg_buffer);
+
+        let result_buffer: Vec<u8> = Vec::new();
+
+        return Ok(CephAuthOperationReply{
+            protocol: authorizer_protocol,
+            result: result,
+            global_id: global_id,
+            result_msg: result_msg.into_owned(),
+            result_buffer: result_buffer,
+        });
+
+    }
+    fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer: Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
 struct CephMsgTagAck{
     tag: CephMsg, //0x08
     seq: u64 //Sequence number of msg being acknowledged

@@ -397,7 +397,7 @@ impl CephPrimitive for CephMsgrMsg{
         };
         let header = try!(CephMsgHeader::read_from_wire(cursor));
         debug!("CephMsgrMsg header: {:?}", &header);
-        //CephMsg is sandwhiched between these two fields
+        //CephMsg is sandwiched between these two fields
         let msg = try!(read_message_from_wire(cursor, &header.msg_type));
         debug!("CephMsgrMsg msg: {:?}", &msg);
         messages.push(msg);
@@ -426,6 +426,9 @@ impl CephPrimitive for CephMsgrMsg{
         let header_bits = try!(self.header.write_to_wire());
         for b in header_bits{
             try!(buffer.write_u8(b.clone()));
+        }
+        for msg in self.msg{
+            buffer.extend(try!(write_message_to_wire(msg.clone())));
         }
 
         //Encode Message

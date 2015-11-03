@@ -124,7 +124,7 @@ mod tests{
             middle_len: 0,// The size of the middle section
             data_len: 12,
             data_off: 0,  // The way data should be aligned by the reciever
-            entity_name: serial::CephEntityName{
+            entity_name: serial::CephSourceName{
                 entity_type: serial::CephEntity::Client,
                 num: 4506,
             },
@@ -447,127 +447,137 @@ fn parse_carbon_url(url: &String)->Result<(String, u16), String>{
 
 fn log_msg_to_carbon(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     if output_args.carbon.is_some(){
-        let op = match msg.msg {
-            serial::Message::OsdOp(ref osd_op) => osd_op,
-            serial::Message::OsdSubop(ref sub_op) => sub_op,
-            _ => return Err("Bad type".to_string())
-        };
+        for ceph_msg in &msg.msg{
 
-        let carbon = output_args.clone().carbon.unwrap();
+            let op = match *ceph_msg {
+                serial::Message::OsdOp(ref osd_op) => osd_op,
+                serial::Message::OsdSubop(ref sub_op) => sub_op,
+                _ => return Err("Bad type".to_string())
+            };
 
-        let carbon_host = carbon.host.clone();
-        let carbon_port = carbon.port.clone();
-        let carbon_url = format!("{}:{}", carbon_host, carbon_port);
-        let carbon_root_key = carbon.root_key.clone();
+            let carbon = output_args.clone().carbon.unwrap();
 
-        let milliseconds_since_epoch = get_time();
-        let doc = Document{
-            header: header,
-            flags: op.flags,
-            operation_count: op.operation_count,
-            size: op.operation.size,
-            timestamp: milliseconds_since_epoch,
-        };
-        let carbon_data = format!("{}.{}", carbon_root_key, try!(doc.to_carbon_string(&carbon.root_key)));
-        try!(log_packet_to_carbon(&carbon_url, carbon_data));
+            let carbon_host = carbon.host.clone();
+            let carbon_port = carbon.port.clone();
+            let carbon_url = format!("{}:{}", carbon_host, carbon_port);
+            let carbon_root_key = carbon.root_key.clone();
+
+            let milliseconds_since_epoch = get_time();
+            let doc = Document{
+                header: header,
+                flags: op.flags,
+                operation_count: op.operation_count,
+                size: op.operation.size,
+                timestamp: milliseconds_since_epoch,
+            };
+            let carbon_data = format!("{}.{}", carbon_root_key, try!(doc.to_carbon_string(&carbon.root_key)));
+            try!(log_packet_to_carbon(&carbon_url, carbon_data));
+
+        }
     }
     Ok(())
 }
 
 fn log_msg_to_elasticsearch(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     if output_args.elasticsearch.is_some() && output_args.outputs.contains(&"elasticsearch".to_string()){
-        let op = match msg.msg {
-            serial::Message::OsdOp(ref osd_op) => osd_op,
-            serial::Message::OsdSubop(ref sub_op) => sub_op,
-            _ => return Err("Bad type".to_string())
-        };
-        let milliseconds_since_epoch = get_time();
-        let doc = Document{
-            header: header,
-            flags: op.flags,
-            operation_count: op.operation_count,
-            size: op.operation.size,
-            timestamp: milliseconds_since_epoch,
-        };
-        let doc_json = try!(doc.to_json());
-        //It's ok to unwrap here because we checked is_some() above
-        // try!(log_packet_to_es("http://10.0.3.144:9200/ceph/operations", &doc_json));
-        try!(log_packet_to_es(&output_args.elasticsearch.clone().unwrap(), &doc_json));
+        for ceph_msg in &msg.msg{
+            let op = match *ceph_msg {
+                serial::Message::OsdOp(ref osd_op) => osd_op,
+                serial::Message::OsdSubop(ref sub_op) => sub_op,
+                _ => return Err("Bad type".to_string())
+            };
+            let milliseconds_since_epoch = get_time();
+            let doc = Document{
+                header: header,
+                flags: op.flags,
+                operation_count: op.operation_count,
+                size: op.operation.size,
+                timestamp: milliseconds_since_epoch,
+            };
+            let doc_json = try!(doc.to_json());
+            //It's ok to unwrap here because we checked is_some() above
+            // try!(log_packet_to_es("http://10.0.3.144:9200/ceph/operations", &doc_json));
+            try!(log_packet_to_es(&output_args.elasticsearch.clone().unwrap(), &doc_json));
+        }
     }
     Ok(())
 }
 
 fn log_msg_to_stdout(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     if output_args.stdout.is_some(){
-        let op = match msg.msg {
-            serial::Message::OsdOp(ref osd_op) => osd_op,
-            serial::Message::OsdSubop(ref sub_op) => sub_op,
-            _ => return Err("Bad type".to_string())
-        };
-        let now = time::now();
-        let time_spec = now.to_timespec();
-        //TODO Expand this
-        println!("{}", format!("ceph.{}.{:?}.{} {}",
-            &header.src_v4addr.unwrap(),
-            op.flags,
-            op.operation.size,
-            time_spec.sec)
-        );
+        for ceph_msg in &msg.msg{
+            let op = match *ceph_msg {
+                serial::Message::OsdOp(ref osd_op) => osd_op,
+                serial::Message::OsdSubop(ref sub_op) => sub_op,
+                _ => return Err("Bad type".to_string())
+            };
+            let now = time::now();
+            let time_spec = now.to_timespec();
+            //TODO Expand this
+            println!("{}", format!("ceph.{}.{:?}.{} {}",
+                &header.src_v4addr.unwrap(),
+                op.flags,
+                op.operation.size,
+                time_spec.sec)
+            );
+        }
     }
     Ok(())
 }
 
 fn log_msg_to_influx(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     if output_args.influx.is_some() && output_args.outputs.contains(&"influx".to_string()) {
-        let op = match msg.msg {
-            serial::Message::OsdOp(ref osd_op) => osd_op,
-            serial::Message::OsdSubop(ref sub_op) => sub_op,
-            _ => return Err("Bad type".to_string())
-        };
+        for ceph_msg in &msg.msg{
+            let op = match *ceph_msg {
+                serial::Message::OsdOp(ref osd_op) => osd_op,
+                serial::Message::OsdSubop(ref sub_op) => sub_op,
+                _ => return Err("Bad type".to_string())
+            };
 
-        let influx = &output_args.influx.clone().unwrap();
-        let credentials = Credentials {
-            username: influx.user.as_ref(),
-            password: influx.password.as_ref(),
-            database: "ceph"
-        };
-        let host = format!("http://{}:{}",influx.host, influx.port);
-        let hosts = vec![host.as_ref()];
-        let client = create_client(credentials, hosts);
+            let influx = &output_args.influx.clone().unwrap();
+            let credentials = Credentials {
+                username: influx.user.as_ref(),
+                password: influx.password.as_ref(),
+                database: "ceph"
+            };
+            let host = format!("http://{}:{}",influx.host, influx.port);
+            let hosts = vec![host.as_ref()];
+            let client = create_client(credentials, hosts);
 
 
 
-        let src_addr: String = match header.src_v4addr{
-            Some(addr) => addr.to_string(),
-            None => {
-                match header.src_v6addr{
-                    Some(addr) => addr.to_string(),
-                    None => "".to_string(),
-                }
-            },
-        };
+            let src_addr: String = match header.src_v4addr{
+                Some(addr) => addr.to_string(),
+                None => {
+                    match header.src_v6addr{
+                        Some(addr) => addr.to_string(),
+                        None => "".to_string(),
+                    }
+                },
+            };
 
-        let dst_addr: String = match header.dst_v4addr{
-            Some(addr) => addr.to_string(),
-            None => {
-                match header.dst_v6addr{
-                    Some(addr) => addr.to_string(),
-                    None => "".to_string(),
-                }
-            },
-        };
-        let size = op.operation.size as f64;
-        let count = op.operation_count as i64;
-        let flags: String = format!("{:?}", op.flags).clone();
-        let mut measurement = Measurement::new("ceph");
-        measurement.add_tag("src_address", src_addr.as_ref());
-        measurement.add_tag("dst_address", dst_addr.as_ref());
-        measurement.add_field("size", Value::Float(size));
-        measurement.add_field("operation", Value::String(flags.as_ref()));
-        measurement.add_field("count", Value::Integer(count));
+            let dst_addr: String = match header.dst_v4addr{
+                Some(addr) => addr.to_string(),
+                None => {
+                    match header.dst_v6addr{
+                        Some(addr) => addr.to_string(),
+                        None => "".to_string(),
+                    }
+                },
+            };
+            let size = op.operation.size as f64;
+            let count = op.operation_count as i64;
+            let flags: String = format!("{:?}", op.flags).clone();
+            let mut measurement = Measurement::new("ceph");
+            measurement.add_tag("src_address", src_addr.as_ref());
+            measurement.add_tag("dst_address", dst_addr.as_ref());
+            measurement.add_field("size", Value::Float(size));
+            measurement.add_field("operation", Value::String(flags.as_ref()));
+            measurement.add_field("count", Value::Integer(count));
 
-        let res = client.write_one(measurement, None);
-        debug!("{:?}", res);
+            let res = client.write_one(measurement, None);
+            debug!("{:?}", res);
+        }
     }
     Ok(())
 }

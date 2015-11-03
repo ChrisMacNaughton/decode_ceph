@@ -99,7 +99,7 @@ pub struct CephXChallengeBlob{
 impl CephXChallengeBlob{
 
     //Start a new challenge
-    fn new(self)->Self{
+    fn new()->Self{
         let mut rand_source = OsRng::new().unwrap();
 
         return CephXChallengeBlob{
@@ -325,7 +325,7 @@ impl AuthHandler{
     fn calculate_client_server_challenge(){
         //client challenge is random bytes
         //encrypt
-        let challenge = CephXChallengeBlob::new();
+        //let challenge = CephXChallengeBlob::new();
 
     }
     pub fn authenticate(self){

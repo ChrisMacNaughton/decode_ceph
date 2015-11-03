@@ -102,6 +102,7 @@ mod tests{
         println!("Wrote {:?} KeepAlive2 bytes", bytes_written);
 
         //I think I need to setup the authorizer stuff now and negotiate a cephx connection
+        //Write a ceph msg of type C_CEPH_MSG_AUTH
         let auth_client_ticket = crypto::AuthTicket::new(600.0);
         let auth_ticket_bytes = auth_client_ticket.write_to_wire().unwrap();
 
@@ -369,12 +370,12 @@ impl CephPrimitive for CephMsgConnectReply{
 pub struct CephMsgrMsg {
     pub tag: CephMsg,//    u8 tag = 0x07;
     pub header: CephMsgHeader,
-    pub msg: Message,
+    pub msg: Vec<Message>, //header + messages + footer
     pub footer: CephMsgFooter,
 }
 
 impl CephMsgrMsg{
-    fn new(header: CephMsgHeader, msg: Message, footer: CephMsgFooter)->CephMsgrMsg{
+    fn new(header: CephMsgHeader, msg: Vec<Message>, footer: CephMsgFooter)->CephMsgrMsg{
         return CephMsgrMsg{
             tag: CephMsg::Msg,
             header: header,
@@ -386,6 +387,7 @@ impl CephMsgrMsg{
 
 impl CephPrimitive for CephMsgrMsg{
 	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let mut messages: Vec<Message> = Vec::new();
         let tag_bits = try!(cursor.read_u8());
         let tag = match CephMsg::from_u8(tag_bits){
             Some(tag) => tag,
@@ -398,6 +400,7 @@ impl CephPrimitive for CephMsgrMsg{
         //CephMsg is sandwhiched between these two fields
         let msg = try!(read_message_from_wire(cursor, &header.msg_type));
         debug!("CephMsgrMsg msg: {:?}", &msg);
+        messages.push(msg);
         //Skip the footer for now
         //let footer = try!(CephMsgFooter::read_from_wire(cursor));
         //println!("footer: {:?}", &footer);
@@ -405,7 +408,7 @@ impl CephPrimitive for CephMsgrMsg{
         return Ok(CephMsgrMsg{
             tag: tag,
             header: header,
-            msg: msg,
+            msg: messages,
             footer: CephMsgFooter{
                 front_crc: 0,
                 middle_crc: 0,
@@ -1333,18 +1336,101 @@ pub struct CephOsdSubOperation {
     pub old_size: u64,
 }
 */
+pub struct AuthReplyMessage{
+    protocol: CephAuthProtocol,
+    result: i32,
+    global_id: u64,
+    //Wireshark gives some stupid message about decoding this section.
+    //Need to do it manually
+}
+/*
+Auth consists of a  PaxosMessage + AuthMessage
+ */
+pub struct AuthMessage{
+    protocol: CephAuthProtocol,
+    supported_protocols: Vec<CephAuthProtocol>,
+    entity_name: CephEntityName,
+    global_id: u64,
+    encoding_version: u8,
+    map_epoch: u32,
+
+}
+
+impl CephPrimitive for AuthMessage{
+    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let mut supported_protocols:Vec<CephAuthProtocol> = Vec::new();
+
+        let authorizer_bits = try!(cursor.read_u32::<LittleEndian>());
+        let authorizer_protocol = match CephAuthProtocol::from_u32(authorizer_bits){
+            Some(authorizer_protocol) => authorizer_protocol,
+            None => {
+                return Err(SerialError::new(format!("Unable to convert {:?} to authorizer_protocol", authorizer_bits)));
+            }
+        };
+        //Unknown field
+        let _ = try!(cursor.read_u8());
+
+        //supported protocols
+        let protocol_fields = try!(cursor.read_u32::<LittleEndian>());
+        for _ in 0..protocol_fields{
+            let protocol_bits = try!(cursor.read_u32::<LittleEndian>());
+            let protocol = match CephAuthProtocol::from_u32(protocol_bits){
+                Some(authorizer_protocol) => authorizer_protocol,
+                None => {
+                    return Err(SerialError::new(format!("Unable to convert {:?} to authorizer_protocol", authorizer_bits)));
+                }
+            };
+            supported_protocols.push(protocol);
+        }
+        let entity = try!(CephEntityName::read_from_wire(cursor));
+        let global_id = try!(cursor.read_u64::<LittleEndian>());
+        let encoding_version = try!(cursor.read_u8());
+        let map_epoch = try!(cursor.read_u32::<LittleEndian>());
+
+
+        return Ok(AuthMessage{
+            protocol: authorizer_protocol,
+            supported_protocols: supported_protocols,
+            entity_name: entity,
+            global_id: global_id,
+            encoding_version: encoding_version,
+            map_epoch: map_epoch,
+        });
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer: Vec<u8> = Vec::new();
+        try!(buffer.write_u32::<LittleEndian>(self.protocol.clone() as u32));
+
+        //Unknown field
+        try!(buffer.write_u8(0));
+
+        //Write out the supported protocols
+        try!(buffer.write_u32::<LittleEndian>(self.supported_protocols.len() as u32));
+        for protocol in &self.supported_protocols{
+            try!(buffer.write_u32::<LittleEndian>(protocol.clone() as u32));
+        }
+
+        buffer.extend(try!(self.entity_name.write_to_wire()));
+        try!(buffer.write_u64::<LittleEndian>(self.global_id));
+        try!(buffer.write_u8(self.encoding_version));
+        try!(buffer.write_u32::<LittleEndian>(self.map_epoch));
+
+        return Ok(buffer);
+    }
+}
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct PaxosMessage {
     pub version: u64,
-    pub mon: u16,
+    pub mon: i16,
     pub mon_tid: u64,
 }
 
 impl CephPrimitive for PaxosMessage{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
         let version = try!(cursor.read_u64::<LittleEndian>());
-        let mon = try!(cursor.read_u16::<LittleEndian>());
+        let mon = try!(cursor.read_i16::<LittleEndian>());
         let mon_tid = try!(cursor.read_u64::<LittleEndian>());
         return Ok(PaxosMessage{
             version: version,
@@ -1355,7 +1441,7 @@ impl CephPrimitive for PaxosMessage{
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
         try!(buffer.write_u64::<LittleEndian>(self.version));
-        try!(buffer.write_u16::<LittleEndian>(self.mon));
+        try!(buffer.write_i16::<LittleEndian>(self.mon));
         try!(buffer.write_u64::<LittleEndian>(self.mon_tid));
 
         return Ok(buffer);
@@ -1422,9 +1508,77 @@ impl CephPrimitive for MonCommand{
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct CephEntityName{
+pub struct CephSourceName{
     pub entity_type: CephEntity,
     pub num: u64,
+}
+
+impl CephPrimitive for CephSourceName{
+    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let entity_type_bits = try!(cursor.read_u8());
+        let entity_type = match CephEntity::from_u8(entity_type_bits){
+            Some(t) => t,
+            None => {
+                return Err(SerialError::new(format!("Unable to convert {:?} to entity_type", entity_type_bits)));
+            }
+        };
+        let entity_id = try!(cursor.read_u64::<LittleEndian>());
+        return Ok(CephSourceName{
+            entity_type: entity_type,
+            num: entity_id,
+        });
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer: Vec<u8> = Vec::new();
+
+        try!(buffer.write_u8(self.entity_type.clone() as u8));
+        try!(buffer.write_u64::<LittleEndian>(self.num));
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct CephEntityName{
+    pub entity_type: CephEntity,
+    pub id: String,
+}
+
+impl CephPrimitive for CephEntityName{
+    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let entity_type_bits = try!(cursor.read_u8());
+        let entity_type = match CephEntity::from_u8(entity_type_bits){
+            Some(t) => t,
+            None => {
+                return Err(SerialError::new(format!("Unable to convert {:?} to entity_type", entity_type_bits)));
+            }
+        };
+
+        //Decode the entity name
+        let mut entity_id_buffer = Vec::new();
+        let entity_id_length = try!(cursor.read_u32::<LittleEndian>());
+        for _ in 0..entity_id_length{
+            entity_id_buffer.push(try!(cursor.read_u8()));
+        }
+        let entity_name = try!(String::from_utf8(entity_id_buffer));
+
+        return Ok(CephEntityName{
+            entity_type: entity_type,
+            id: entity_name,
+        });
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer: Vec<u8> = Vec::new();
+        try!(buffer.write_u8(self.entity_type.clone() as u8));
+        try!(buffer.write_u32::<LittleEndian>(self.id.len() as u32));
+        for b in self.id.as_bytes(){
+            try!(buffer.write_u8(*b));
+        }
+
+        return Ok(buffer);
+    }
 }
 
 #[derive(Debug,Eq,PartialEq)]
@@ -1475,7 +1629,7 @@ pub struct CephMsgHeader {
     pub middle_len: u32,// The size of the middle section
     pub data_len: u32,  // The size of the data section
     pub data_off: u16,  // The way data should be aligned by the reciever
-    pub entity_name: CephEntityName, // Information about the sender
+    pub entity_name: CephSourceName, // Information about the sender
     pub compat_version: u16, // Oldest compatible encoding version
     pub reserved: u16, // Unused
     pub crc: u32,  // CRC of header
@@ -1511,14 +1665,7 @@ impl CephPrimitive for CephMsgHeader{
         let data_len = try!(cursor.read_u32::<LittleEndian>());
         let data_off = try!(cursor.read_u16::<LittleEndian>());
 
-        let entity_type_bits = try!(cursor.read_u8());
-        let entity_type = match CephEntity::from_u8(entity_type_bits){
-            Some(t) => t,
-            None => {
-                return Err(SerialError::new(format!("Unable to convert {:?} to entity_type", entity_type_bits)));
-            }
-        };
-        let entity_id = try!(cursor.read_u64::<LittleEndian>());
+        let source_name = try!(CephSourceName::read_from_wire(cursor));
 
         let compat_version = try!(cursor.read_u16::<LittleEndian>());
         let reserved = try!(cursor.read_u16::<LittleEndian>());
@@ -1535,10 +1682,7 @@ impl CephPrimitive for CephMsgHeader{
             middle_len: middle_len,
             data_len: data_len,
             data_off: data_off,
-            entity_name: CephEntityName{
-                entity_type: entity_type,
-                num: entity_id,
-            },
+            entity_name: source_name,
             compat_version: compat_version,
             reserved: reserved,
             crc: crc,
@@ -1560,8 +1704,7 @@ impl CephPrimitive for CephMsgHeader{
         try!(buffer.write_u32::<LittleEndian>(self.data_len));
         try!(buffer.write_u16::<LittleEndian>(self.data_off));
 
-        try!(buffer.write_u8(self.entity_name.entity_type.clone() as u8));
-        try!(buffer.write_u64::<LittleEndian>(self.entity_name.num));
+        buffer.extend(try!(self.entity_name.write_to_wire()));
 
         try!(buffer.write_u16::<LittleEndian>(self.compat_version));
         try!(buffer.write_u16::<LittleEndian>(self.reserved));
@@ -1975,6 +2118,18 @@ impl CephPrimitive for EntityAddr{
             );
         }
         return Ok(buffer);
+    }
+}
+
+fn send_auth_msg(socket: &mut TcpStream, paxos: PaxosMessage, auth: AuthMessage) -> Result<usize, SerialError>{
+    let paxos_bytes = try!(paxos.write_to_wire());
+    let auth_bytes = try!(auth.write_to_wire());
+    let mut written_bytes = try!(socket.write(&paxos_bytes));
+    written_bytes = written_bytes + try!(socket.write(&auth_bytes));
+    if written_bytes <= 0{
+        return Err(SerialError::new("Unable to send banner".to_string()));
+    }else{
+        return Ok(written_bytes);
     }
 }
 

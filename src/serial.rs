@@ -976,6 +976,65 @@ bitflags!{
         const CEPH_OSD_FLAG_KNOWN_REDIR = 0x400000,  /* redirect bit is authoritative */
     }
 }
+#[derive(Debug,Eq,PartialEq)]
+pub struct Subscription{
+    name: String,
+    start_time: u64, //what is this?  Time since epoch?
+    flags: u8,
+}
+
+impl CephPrimitive for Subscription{
+    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let name = try!(read_string(cursor));
+        let start_time = try!(cursor.read_u64::<LittleEndian>());
+        let flags = try!(cursor.read_u8());
+        return Ok(Subscription{
+            name: name,
+            start_time: start_time,
+            flags: flags,
+        });
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+        try!(buffer.write_u32::<LittleEndian>(self.name.len() as u32));
+        buffer.extend(self.name.as_bytes());
+        try!(buffer.write_u64::<LittleEndian>(self.start_time));
+        try!(buffer.write_u8(self.flags));
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct MonitorSubscribe{
+    subscriptions: Vec<Subscription>,
+}
+
+impl CephPrimitive for MonitorSubscribe{
+    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let mut subscriptions: Vec<Subscription> = Vec::new();
+        let number_of_items = try!(cursor.read_u32::<LittleEndian>());
+        for _ in 0..number_of_items{
+            let subscription = try!(Subscription::read_from_wire(cursor));
+            subscriptions.push(subscription);
+        }
+
+        return Ok(MonitorSubscribe{
+            subscriptions: subscriptions,
+        });
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+        for subscription in self.subscriptions.iter(){
+            let subscription_bytes = try!(subscription.write_to_wire());
+            buffer.extend(subscription_bytes);
+        }
+
+        return Ok(buffer);
+    }
+}
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct ObjectLocator{
@@ -1092,6 +1151,98 @@ impl CephPrimitive for Monitor{
 
         return Ok(buffer);
     }
+}
+#[derive(Debug,Eq,PartialEq)]
+pub struct ClientHitSetParams{
+    encoding_version: u8,
+    min_compat_version: u8,
+    size: u32,
+    hitset_type: u8, //decode me
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct ClientPgInfo{
+    encoding_version: u8,
+    min_compat_version: u8,
+    size: u32, //ceph.nanoseconds ?? what is this
+    pool_type: u8, //Replicated/ Erasure //decode me
+    pool_size: u8,
+    crush_ruleset: u8,
+    object_hash: u8,
+    pg_count: u32,
+    pgp_count: u32,
+    last_changed: u32,
+    snap_seq: u64,
+    epoch: u32,
+    user_id: u64,
+    hash_flags: u32, //hash seed + pool together
+    crash_replay_interval: u32,
+    min_num_osds: u8,
+    max_bytes: u64, //quotas
+    max_objects: u64, //quotas
+    tier_of: u64,
+    cache_mode: u8,
+    read_tier: u64,
+    write_tier: u64,
+    hitset_period: u32,
+    hitset_count: u32,
+    stripe_width: u32,
+    target_max_bytes: u64, //quotas
+    target_max_objects: u64, //quotas
+    cache_target_dirty_full_ratio: u32,
+    cache_target_full_ratio: u32,
+    cache_min_flush_age: u32,
+    cache_min_evict_age: u32,
+    erasure_code_profile: String,
+    last_force_resend: u32,
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct ClientOsdData{
+    encoding_version: u8,
+    min_compat_version: u8,
+    size: u32,
+    fsid: Uuid,
+    epoch: u32,
+    time_created: Utime,
+    last_modified: Utime,
+    //pools: Vec<ClientPoolInfo>,
+    pool_ids: Vec<String>,
+    highest_pool_id: u32,
+    flags: u32,
+    highest_osd_num: u32,
+    osd_states: Vec<u8>,
+    osd_weights: Vec<u32>,
+
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct OsdInfo{
+    encoding_version: u8,
+    //These are all epoch numbers I believe
+    last_clean_being: u32,
+    last_clean_end: u32,
+    up_from: u32,
+    up_through: u32,
+    down_at: u32,
+    lost_at: u32,
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct CephOsdMap{
+    epoch: u32,
+
+    osd_info: Vec<OsdInfo>,
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct OsdMap{
+    fsid: Uuid,
+    incremental_map_count: u32,
+    map_count: u32,
+
+    oldest_map: u32,
+    newest_map:u32,
 }
 
 

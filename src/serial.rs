@@ -105,12 +105,76 @@ mod tests{
 
         //I think I need to setup the authorizer stuff now and negotiate a cephx connection
         //Write a ceph msg of type C_CEPH_MSG_AUTH
-        let auth_client_ticket = crypto::AuthTicket::new(600.0);
-        let auth_ticket_bytes = auth_client_ticket.write_to_wire().unwrap();
+        let auth_msg = super::AuthMessage{
+            paxos_msg: super::PaxosMessage{
+                version: 0,
+                mon: -1,
+                mon_tid: 0,
+            },
+            protocol: super::CephAuthProtocol::CephAuthUnknown,
+            supported_protocols: vec![super::CephAuthProtocol::CephAuthCephx],
+            entity_name: super::CephEntityName{
+                entity_type: super::CephEntity::Client,
+                id: "admin".to_string(),
+            },
+            global_id: 0,
+            encoding_version: 1,
+            map_epoch: 0,
+        };
+
+        let ceph_msgr_auth_msg = super::CephMsgrMsg {
+            tag: super::CephMsg::Msg,
+            header: CephMsgHeader{
+                sequence_num: u64,
+                transaction_id: u64,
+                msg_type: CephMsgType, //u16,  //CEPH_MSG_* or MSG_*
+                priority: u16,
+                version: u16,   //version of message encoding
+                front_len: u32, // The size of the front section
+                middle_len: u32,// The size of the middle section
+                data_len: u32,  // The size of the data section
+                data_off: u16,  // The way data should be aligned by the reciever
+                entity_name: CephSourceName, // Information about the sender
+                compat_version: u16, // Oldest compatible encoding version
+                reserved: u16, // Unused
+                crc: u32,  // CRC of header
+            },
+            msg: vec![auth_msg],
+            footer: CephMsgFooter{
+                front_crc: u32,
+                middle_crc: u32,
+                data_crc: u32,
+                crypto_sig: u64,
+                flags: u8
+            },
+        }
+
+
+        let auth_msg_bytes = auth_msg.write_to_wire().unwrap();
+        println!("auth_msg_bytes {:?}", &auth_msg_bytes);
+        bytes_written = stream.write(&auth_msg_bytes).unwrap();
+        println!("Wrote {:?} auth bytes", bytes_written);
+
+        let mut keep_alive2_buffer = Vec::new();
+        (&mut stream).take(9).read_to_end(&mut keep_alive2_buffer).unwrap();
+        let mut keep_alive2cursor = Cursor::new(&mut keep_alive2_buffer[..]);
+        let keep_alive2_reply = super::CephMsgKeepAlive2::read_from_wire(&mut keep_alive2cursor);
+        println!("Got KeepAlive2: {:?}", keep_alive2_reply);
+
+        let mut keep_alive2_ack_buffer = Vec::new();
+        (&mut stream).take(9).read_to_end(&mut keep_alive2_ack_buffer).unwrap();
+        println!("KeepAlive2Ack {:?}", &keep_alive2_ack_buffer);
+        let mut keep_alive2_ackcursor = Cursor::new(&mut keep_alive2_ack_buffer[..]);
+        let keep_alive2_ack = super::CephMsgKeepAlive2Ack::read_from_wire(&mut keep_alive2_ackcursor);
+        println!("Got KeepAlive2Ack: {:?}", keep_alive2_ack);
+        //Then MonMap
+        //Then AuthReplyMessage
+
+        //let auth_client_ticket = crypto::AuthTicket::new(600.0);
+        //let auth_ticket_bytes = auth_client_ticket.write_to_wire().unwrap();
 
         //  p->a : principal, principal_addr.  authenticate me!
-        bytes_written = stream.write(&auth_ticket_bytes).unwrap();
-        println!("Wrote {:?} auth ticket bytes", bytes_written);
+        //bytes_written = stream.write(&auth_ticket_bytes).unwrap();
     }
 
     #[test]
@@ -781,8 +845,6 @@ fn read_messages_from_wire<R: Read>(cursor: &mut R, msg_type: &CephMsgType) -> R
     match msg_type{
         &CephMsgType::MsgAuth => {
             debug!("CephAuth");
-            let paxosop = try!(PaxosMessage::read_from_wire(cursor));
-            messages.push(Message::Paxos(paxosop));
             let authop = try!(AuthMessage::read_from_wire(cursor));
             messages.push(Message::Auth(authop));
             return Ok(messages);
@@ -976,6 +1038,7 @@ bitflags!{
         const CEPH_OSD_FLAG_KNOWN_REDIR = 0x400000,  /* redirect bit is authoritative */
     }
 }
+
 #[derive(Debug,Eq,PartialEq)]
 pub struct Subscription{
     name: String,
@@ -996,9 +1059,8 @@ impl CephPrimitive for Subscription{
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-        let mut buffer:Vec<u8> = Vec::new();
-        try!(buffer.write_u32::<LittleEndian>(self.name.len() as u32));
-        buffer.extend(self.name.as_bytes());
+        let buffer:Vec<u8> = Vec::new();
+        let mut buffer = try!(write_string(buffer, &self.name));
         try!(buffer.write_u64::<LittleEndian>(self.start_time));
         try!(buffer.write_u8(self.flags));
 
@@ -1595,17 +1657,19 @@ Auth consists of a  PaxosMessage + AuthMessage
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct AuthMessage{
+    paxos_msg: PaxosMessage,
     protocol: CephAuthProtocol,
+    encoding_version: u8,
     supported_protocols: Vec<CephAuthProtocol>,
     entity_name: CephEntityName,
     global_id: u64,
-    encoding_version: u8,
     map_epoch: u32,
-
 }
 
 impl CephPrimitive for AuthMessage{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let paxos_msg = try!(PaxosMessage::read_from_wire(cursor));
+
         let mut supported_protocols:Vec<CephAuthProtocol> = Vec::new();
 
         let authorizer_bits = try!(cursor.read_u32::<LittleEndian>());
@@ -1617,8 +1681,8 @@ impl CephPrimitive for AuthMessage{
         };
         //Unknown fields.  Could this be the server secret?
         let _ = try!(cursor.read_u32::<LittleEndian>());
-        let _ = try!(cursor.read_u8());
         //Unknown fields.  Could this be the server secret?
+        let encoding_version = try!(cursor.read_u8());
 
         //supported protocols
         let protocol_fields = try!(cursor.read_u32::<LittleEndian>());
@@ -1634,11 +1698,11 @@ impl CephPrimitive for AuthMessage{
         }
         let entity = try!(CephEntityName::read_from_wire(cursor));
         let global_id = try!(cursor.read_u64::<LittleEndian>());
-        let encoding_version = try!(cursor.read_u8());
         let map_epoch = try!(cursor.read_u32::<LittleEndian>());
 
 
         return Ok(AuthMessage{
+            paxos_msg: paxos_msg,
             protocol: authorizer_protocol,
             supported_protocols: supported_protocols,
             entity_name: entity,
@@ -1650,12 +1714,14 @@ impl CephPrimitive for AuthMessage{
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
+        buffer.extend(try!(self.paxos_msg.write_to_wire()));
+
         try!(buffer.write_u32::<LittleEndian>(self.protocol.clone() as u32));
 
         //Unknown fields
         try!(buffer.write_u32::<LittleEndian>(0));
-        try!(buffer.write_u8(0));
         //Unknown fields
+        try!(buffer.write_u8(self.encoding_version));
 
         //Write out the supported protocols
         try!(buffer.write_u32::<LittleEndian>(self.supported_protocols.len() as u32));
@@ -1665,7 +1731,6 @@ impl CephPrimitive for AuthMessage{
 
         buffer.extend(try!(self.entity_name.write_to_wire()));
         try!(buffer.write_u64::<LittleEndian>(self.global_id));
-        try!(buffer.write_u8(self.encoding_version));
         try!(buffer.write_u32::<LittleEndian>(self.map_epoch));
 
         return Ok(buffer);
@@ -1711,22 +1776,12 @@ pub struct MonCommand {
 impl CephPrimitive for MonCommand{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
         let paxos = try!(PaxosMessage::read_from_wire(cursor));
-        let fsid_len = try!(cursor.read_u32::<LittleEndian>());
-        let mut fsid_buff = Vec::new();
-        for _ in 0..fsid_len{
-            fsid_buff.push(try!(cursor.read_u8()));
-        }
-        let fsid = try!(String::from_utf8(fsid_buff));
+        let fsid = try!(read_string(cursor));
         let arg_count = try!(cursor.read_u32::<LittleEndian>());
         let mut args: Vec<String> = Vec::with_capacity(arg_count as usize);
 
         for _ in 0..arg_count{
-            let mut buf = Vec::new();
-            let size = try!(cursor.read_u32::<LittleEndian>());
-            for _ in 0..size{
-                buf.push(try!(cursor.read_u8()));
-            }
-            let arg = try!(String::from_utf8(buf));
+            let arg = try!(read_string(cursor));
             args.push(arg);
         }
 
@@ -1737,22 +1792,20 @@ impl CephPrimitive for MonCommand{
             arguments: args,
         });
     }
+
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
         buffer.extend(try!(self.paxos.write_to_wire()));
 
-        let fsid_copy = self.fsid.clone();
-        for b in fsid_copy.into_bytes(){
-            buffer.push(b.clone());
-        }
+        let mut buffer = try!(write_string(buffer, &self.fsid));
 
         try!(buffer.write_u32::<LittleEndian>(self.argument_count));
 
         for arg in &self.arguments{
             let arg_copy = arg.clone();
-            for b in arg_copy.into_bytes(){
-                buffer.push(b.clone());
-            }
+            //TODO: Can't use my write_string fn here.  buffer doesn't live long enough
+            try!(buffer.write_u32::<LittleEndian>(arg_copy.len() as u32));
+            buffer.extend(arg_copy.into_bytes());
         }
 
         return Ok(buffer);
@@ -1808,12 +1861,7 @@ impl CephPrimitive for CephEntityName{
         };
 
         //Decode the entity name
-        let mut entity_id_buffer = Vec::new();
-        let entity_id_length = try!(cursor.read_u32::<LittleEndian>());
-        for _ in 0..entity_id_length{
-            entity_id_buffer.push(try!(cursor.read_u8()));
-        }
-        let entity_name = try!(String::from_utf8(entity_id_buffer));
+        let entity_name = try!(read_string(cursor));
 
         return Ok(CephEntityName{
             entity_type: entity_type,
@@ -1824,11 +1872,7 @@ impl CephPrimitive for CephEntityName{
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
         try!(buffer.write_u8(self.entity_type.clone() as u8));
-        try!(buffer.write_u32::<LittleEndian>(self.id.len() as u32));
-        for b in self.id.as_bytes(){
-            try!(buffer.write_u8(*b));
-        }
-
+        let buffer = try!(write_string(buffer, &self.id));
         return Ok(buffer);
     }
 }
@@ -2068,25 +2112,15 @@ impl CephPrimitive for CephAuthOperationReply{
         };
 
         let result = try!(cursor.read_i32::<LittleEndian>());
-
         let global_id = try!(cursor.read_u64::<LittleEndian>());
-
-        let result_msg_len = try!(cursor.read_u32::<LittleEndian>());
-        let mut msg_buffer: Vec<u8> = Vec::with_capacity(result_msg_len as usize);
-
-        for _ in 0..result_msg_len{
-            let b = try!(cursor.read_u8());
-            msg_buffer.push(b);
-        }
-        let result_msg = String::from_utf8_lossy(&msg_buffer);
-
+        let result_msg = try!(read_string(cursor));
         let result_buffer: Vec<u8> = Vec::new();
 
         return Ok(CephAuthOperationReply{
             protocol: authorizer_protocol,
             result: result,
             global_id: global_id,
-            result_msg: result_msg.into_owned(),
+            result_msg: result_msg,
             result_buffer: result_buffer,
         });
 
@@ -2097,6 +2131,8 @@ impl CephPrimitive for CephAuthOperationReply{
         return Ok(buffer);
     }
 }
+
+#[derive(Debug)]
 struct CephMsgTagAck{
     tag: CephMsg, //0x08
     seq: u64 //Sequence number of msg being acknowledged
@@ -2135,6 +2171,7 @@ impl CephPrimitive for CephMsgTagAck{
     }
 }
 
+#[derive(Debug)]
 struct CephMsgKeepAlive{
     tag: CephMsg, //0x09
     data: u8, // No data
@@ -2174,6 +2211,7 @@ impl CephPrimitive for CephMsgKeepAlive{
     }
 }
 
+#[derive(Debug)]
 struct CephMsgKeepAlive2{
     tag: CephMsg, //0x0E
     timestamp: Utime,
@@ -2220,6 +2258,7 @@ impl CephPrimitive for CephMsgKeepAlive2{
     }
 }
 
+#[derive(Debug)]
 struct CephMsgKeepAlive2Ack{
     tag: CephMsg, //0x0F
     timestamp: Utime,
@@ -2373,16 +2412,10 @@ impl CephPrimitive for EntityAddr{
     }
 }
 
-fn send_auth_msg(socket: &mut TcpStream, paxos: PaxosMessage, auth: AuthMessage) -> Result<usize, SerialError>{
-    let paxos_bytes = try!(paxos.write_to_wire());
-    let auth_bytes = try!(auth.write_to_wire());
-    let mut written_bytes = try!(socket.write(&paxos_bytes));
-    written_bytes = written_bytes + try!(socket.write(&auth_bytes));
-    if written_bytes <= 0{
-        return Err(SerialError::new("Unable to send banner".to_string()));
-    }else{
-        return Ok(written_bytes);
-    }
+fn write_string(mut out: Vec<u8>, s: &String) -> Result<Vec<u8>, SerialError>{
+    try!(out.write_u32::<LittleEndian>(s.len() as u32));
+    out.extend(s.clone().into_bytes());
+    return Ok(out);
 }
 
 fn read_string<R: Read>(cursor: &mut R) -> Result<String, SerialError>{
@@ -2391,7 +2424,7 @@ fn read_string<R: Read>(cursor: &mut R) -> Result<String, SerialError>{
     for _ in 0..length{
         buffer.push(try!(cursor.read_u8()));
     }
-    return Ok(try!(String::from_utf8(buffer)));
+    return Ok(String::from_utf8_lossy(&buffer).into_owned());
 }
 
 //Connect to Ceph Monitor and send a hello banner

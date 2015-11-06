@@ -17,11 +17,7 @@ use std::io::prelude::*;
 use std::net::{Ipv4Addr,Ipv6Addr,TcpStream};
 use std::string::FromUtf8Error;
 //There will be no padding between the elements and the elements will be sent in the order they appear
-//const CEPH_BANNER: str = "ceph v027";
-/*
-CEPH_BANNER "ceph v027"
-CEPH_BANNER_MAX_LEN 30
-*/
+
 #[cfg(test)]
 mod tests{
     use std::io::Cursor;
@@ -125,29 +121,32 @@ mod tests{
         let ceph_msgr_auth_msg = super::CephMsgrMsg {
             tag: super::CephMsg::Msg,
             header: CephMsgHeader{
-                sequence_num: u64,
-                transaction_id: u64,
-                msg_type: CephMsgType, //u16,  //CEPH_MSG_* or MSG_*
-                priority: u16,
-                version: u16,   //version of message encoding
-                front_len: u32, // The size of the front section
-                middle_len: u32,// The size of the middle section
-                data_len: u32,  // The size of the data section
-                data_off: u16,  // The way data should be aligned by the reciever
-                entity_name: CephSourceName, // Information about the sender
-                compat_version: u16, // Oldest compatible encoding version
-                reserved: u16, // Unused
-                crc: u32,  // CRC of header
+                sequence_num: 1,
+                transaction_id: 0,
+                msg_type: CephMsgType::MsgAuth,
+                priority: super::CephPriority::Default,
+                version: 1,
+                front_len: 60,
+                middle_len: 0,
+                data_len: 0,
+                data_off: 0,
+                entity_name: super::CephSourceName{
+                    entity_type: super::CephEntity::Client,
+                    num: 18446744073709551615 //TODO Why is this the max u64?
+                },
+                compat_version: 1,
+                reserved: 0,
+                crc: u32, //TODO: how do I calculate this?
             },
             msg: vec![auth_msg],
             footer: CephMsgFooter{
-                front_crc: u32,
-                middle_crc: u32,
-                data_crc: u32,
-                crypto_sig: u64,
+                front_crc: u32, //TODO: how do I calculate this?
+                middle_crc: 0,
+                data_crc: 0,
+                crypto_sig: 0,
                 flags: u8
             },
-        }
+        };
 
 
         let auth_msg_bytes = auth_msg.write_to_wire().unwrap();

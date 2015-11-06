@@ -1213,12 +1213,40 @@ impl CephPrimitive for Monitor{
         return Ok(buffer);
     }
 }
+
 #[derive(Debug,Eq,PartialEq)]
 pub struct ClientHitSetParams{
     encoding_version: u8,
     min_compat_version: u8,
     size: u32,
     hitset_type: u8, //decode me
+}
+
+impl CephPrimitive for ClientHitSetParams{
+    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let encoding_version = try!(cursor.read_u8());
+        let min_compat_version = try!(cursor.read_u8());
+        let size = try!(cursor.read_u32::<LittleEndian>());
+        let hitset_type = try!(cursor.read_u8());
+
+        return Ok(ClientHitSetParams{
+            encoding_version: encoding_version,
+            min_compat_version: min_compat_version,
+            size: size,
+            hitset_type: hitset_type,
+        });
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        try!(buffer.write_u8(self.encoding_version));
+        try!(buffer.write_u8(self.min_compat_version));
+        try!(buffer.write_u32::<LittleEndian>(self.size));
+        try!(buffer.write_u8(self.hitset_type));
+
+        return Ok(buffer);
+    }
 }
 
 #[derive(Debug,Eq,PartialEq)]
@@ -1258,6 +1286,36 @@ pub struct ClientPgInfo{
     last_force_resend: u32,
 }
 
+impl CephPrimitive for ClientHitSetParams{
+    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+        let encoding_version = try!(cursor.read_u8());
+        let min_compat_version = try!(cursor.read_u8());
+        let size = try!(cursor.read_u32::<LittleEndian>());
+        let pool_type = try!(cursor.read_u8());
+        let pool_size = try!(cursor.read_u8());
+        let crush_ruleset = try!(cursor.read_u8());
+        let object_hash = try!(cursor.read_u8());
+        let pg_count = try!(cursor.read_u32::<LittleEndian>());
+
+        return Ok(ClientHitSetParams{
+            encoding_version: encoding_version,
+            min_compat_version: min_compat_version,
+            size: size,
+            hitset_type: hitset_type,
+        });
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        try!(buffer.write_u8(self.encoding_version));
+        try!(buffer.write_u8(self.min_compat_version));
+        try!(buffer.write_u32::<LittleEndian>(self.size));
+        try!(buffer.write_u8(self.hitset_type));
+
+        return Ok(buffer);
+    }
+}
 #[derive(Debug,Eq,PartialEq)]
 pub struct ClientOsdData{
     encoding_version: u8,

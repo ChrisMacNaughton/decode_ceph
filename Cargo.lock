@@ -9,6 +9,7 @@ dependencies = [
  "enum_primitive 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "influent 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nom 1.0.0-beta (registry+https://github.com/rust-lang/crates.io-index)",
  "num 0.1.27 (registry+https://github.com/rust-lang/crates.io-index)",
  "output_args 0.1.0 (git+https://github.com/ChrisMacNaughton/ceph_cli_args.git)",
  "pcap 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -195,6 +196,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "log 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
+
+[[package]]
+name = "nom"
+version = "1.0.0-beta"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "num"

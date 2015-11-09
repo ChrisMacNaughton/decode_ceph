@@ -1,5 +1,6 @@
 extern crate byteorder;
 extern crate crc;
+extern crate nom;
 extern crate num;
 extern crate time;
 extern crate uuid;
@@ -9,7 +10,6 @@ use self::byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use self::crc::Hasher32;
 use self::num::FromPrimitive;
 use self::uuid::{ParseError, Uuid};
-
 //Std libs
 use std::io;
 use std::io::{ErrorKind};
@@ -288,7 +288,7 @@ impl From<ParseError> for SerialError {
 }
 
 pub trait CephPrimitive {
-	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError> where Self: Sized;
+	fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self> where Self: Sized; //Result<Self, SerialError> where Self: Sized;
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>;
 }
 
@@ -306,7 +306,7 @@ pub struct CephMsgConnect{
 }
 
 impl CephPrimitive for CephMsgConnect{
-	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+	fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         let feature_bits = try!(cursor.read_u64::<LittleEndian>());
         let features = match CephFeatures::from_bits(feature_bits){
             Some(features) => features,
@@ -380,7 +380,7 @@ pub struct CephMsgConnectReply{
 }
 
 impl CephPrimitive for CephMsgConnectReply{
-	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+	fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         let tag_bits = try!(cursor.read_u8());
         let tag = match CephMsg::from_u8(tag_bits){
             Some(tag) => tag,
@@ -458,7 +458,7 @@ impl CephMsgrMsg{
 }
 
 impl CephPrimitive for CephMsgrMsg{
-	fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+	fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         let tag_bits = try!(cursor.read_u8());
         let tag = match CephMsg::from_u8(tag_bits){
             Some(tag) => tag,
@@ -1039,22 +1039,26 @@ bitflags!{
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Subscription{
-    name: String,
+pub struct Subscription<'a>{
+    name: &'a str,
     start_time: u64, //what is this?  Time since epoch?
     flags: u8,
 }
 
 impl CephPrimitive for Subscription{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let name = try!(read_string(cursor));
-        let start_time = try!(cursor.read_u64::<LittleEndian>());
-        let flags = try!(cursor.read_u8());
-        return Ok(Subscription{
-            name: name,
-            start_time: start_time,
-            flags: flags,
-        });
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            str_len: le_u32 ~
+            name: take_str!(str_len) ~
+            start_time: le_u64 ~
+            flags: le_u8, || {
+                Subscription {
+                    name: name,
+                    start_time: start_time,
+                    flags: flags
+                }
+            }
+        );
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
@@ -1073,7 +1077,7 @@ pub struct MonitorSubscribe{
 }
 
 impl CephPrimitive for MonitorSubscribe{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         let mut subscriptions: Vec<Subscription> = Vec::new();
         let number_of_items = try!(cursor.read_u32::<LittleEndian>());
         for _ in 0..number_of_items{
@@ -1108,23 +1112,19 @@ pub struct ObjectLocator{
 }
 
 impl CephPrimitive for ObjectLocator {
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let encoding_version = try!(cursor.read_u8());
-        let min_compat_version = try!(cursor.read_u8());
-        let size = try!(cursor.read_u32::<LittleEndian>());
-        let pool = try!(cursor.read_u64::<LittleEndian>());
-        //TODO: Wireshark skips 8 bytes here.  What is this?
-        let _ = try!(cursor.read_u64::<LittleEndian>());
-        let namespace_size = try!(cursor.read_u32::<LittleEndian>());
-        let mut namespace_buf: Vec<u8> = Vec::new();
-        for _ in 0 .. namespace_size{
-            let b = try!(cursor.read_u8());
-            namespace_buf.push(b);
-        }
-        //TODO: Wireshark skips 8 bytes here.  What is this?
-        let _ = try!(cursor.read_u64::<LittleEndian>());
-
-        return Ok(
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            encoding_version: le_u8 ~
+            min_compat_version: le_u8 ~
+            size: le_u32 ~
+            pool: le_u64 ~
+            //TODO: Wireshark skips 8 bytes here.  What is this?
+            skip: le_u64 ~
+            namespace_size: le_u32 ~
+            namespace_data: take!(namespace_size) ~
+            //TODO: Wireshark skips 8 bytes here.  What is this?
+            skip_2: le_u64,
+            || {
             ObjectLocator{
                 encoding_version: encoding_version,
                 min_compat_version: min_compat_version,
@@ -1133,7 +1133,7 @@ impl CephPrimitive for ObjectLocator {
                 namespace_size: namespace_size,
                 namespace_data: namespace_buf,
             }
-        );
+        });
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
@@ -1160,18 +1160,20 @@ pub struct PlacementGroup{
 }
 
 impl CephPrimitive for PlacementGroup {
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let group_version = try!(cursor.read_u8());
-        let pool = try!(cursor.read_u64::<LittleEndian>());
-        let seed = try!(cursor.read_u32::<LittleEndian>());
-        let preferred = try!(cursor.read_u32::<LittleEndian>());
-
-        return Ok(PlacementGroup{
-            group_version:group_version,
-            pool: pool,
-            seed:seed,
-            preferred:preferred,
-        });
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            group_version: le_u8 ~
+            pool: le_u64 ~
+            seed: le_u32 ~
+            preferred: le_u32, || {
+                PlacementGroup {
+                    group_version: group_version,
+                    pool: pool,
+                    seed: seed,
+                    preferred: preferred
+                }
+            }
+        );
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
@@ -1186,15 +1188,15 @@ impl CephPrimitive for PlacementGroup {
 
 }
 #[derive(Debug,Eq,PartialEq)]
-pub struct Monitor{
-    name: String,
+pub struct Monitor<'a>{
+    name: &'a str,
     ipv4_addr: Option<Ipv4Addr>,
     ipv6_addr: Option<Ipv6Addr>,
     port: u16,
 }
 
 impl CephPrimitive for Monitor{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         let name = try!(read_string(cursor));
         //ip_addr stuff
         let port = try!(cursor.read_u16::<LittleEndian>());
@@ -1223,18 +1225,20 @@ pub struct ClientHitSetParams{
 }
 
 impl CephPrimitive for ClientHitSetParams{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let encoding_version = try!(cursor.read_u8());
-        let min_compat_version = try!(cursor.read_u8());
-        let size = try!(cursor.read_u32::<LittleEndian>());
-        let hitset_type = try!(cursor.read_u8());
-
-        return Ok(ClientHitSetParams{
-            encoding_version: encoding_version,
-            min_compat_version: min_compat_version,
-            size: size,
-            hitset_type: hitset_type,
-        });
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            encoding_version: le_u8 ~
+            min_compat_version: le_u8 ~
+            size: le_u32 ~
+            hitset_type: le_u8, ||{
+                ClientHitSetParams {
+                    encoding_version: encoding_version,
+                    min_compat_version: min_compat_version,
+                    size: size,
+                    hitset_type: hitset_type
+                }
+            }
+        );
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
@@ -1250,7 +1254,7 @@ impl CephPrimitive for ClientHitSetParams{
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct ClientPgInfo{
+pub struct ClientPgInfo<'a>{
     encoding_version: u8,
     min_compat_version: u8,
     size: u32, //ceph.nanoseconds ?? what is this
@@ -1282,27 +1286,53 @@ pub struct ClientPgInfo{
     cache_target_full_ratio: u32,
     cache_min_flush_age: u32,
     cache_min_evict_age: u32,
-    erasure_code_profile: String,
+    erasure_code_profile: &'a str,
     last_force_resend: u32,
 }
 
-impl CephPrimitive for ClientHitSetParams{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let encoding_version = try!(cursor.read_u8());
-        let min_compat_version = try!(cursor.read_u8());
-        let size = try!(cursor.read_u32::<LittleEndian>());
-        let pool_type = try!(cursor.read_u8());
-        let pool_size = try!(cursor.read_u8());
-        let crush_ruleset = try!(cursor.read_u8());
-        let object_hash = try!(cursor.read_u8());
-        let pg_count = try!(cursor.read_u32::<LittleEndian>());
-
-        return Ok(ClientHitSetParams{
-            encoding_version: encoding_version,
-            min_compat_version: min_compat_version,
-            size: size,
-            hitset_type: hitset_type,
-        });
+impl CephPrimitive for ClientHitSetParams<'a>{
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self> {
+        chain!(input,
+            encoding_version: le_u8 ~
+            min_compat_version: le_u8 ~
+            size: le_u32 ~
+            pool_size: le_u8 ~
+            crush_ruleset: le_u8 ~
+            object_hash: le_u8 ~
+            pg_count: le_u32 ~
+            pgp_count: le_u32 ~
+            last_changed: le_u32 ~
+            snap_seq: le_u64 ~
+            epoch: le_u32 ~
+            user_id: le_u64 ~
+            hash_flags: le_u32 ~
+            crash_replay_interval: le_u32 ~
+            min_num_osds: le_u8 ~
+            max_bytes: le_u64 ~
+            max_objects: le_u64 ~
+            tier_of: le_u64 ~
+            cache_mode: le_u8 ~
+            read_tier: le_u64 ~
+            write_tier: le_u64 ~
+            hitset_period: le_u32 ~
+            hitset_count: le_u32 ~
+            stripe_width: le_u32 ~
+            target_max_bytes: le_u64 ~
+            target_max_objects: le_u64 ~
+            cache_target_dirty_full_ratio: le_u32 ~
+            cache_target_full_ratio: le_u32 ~
+            cache_min_flush_age: le_u32 ~
+            cache_min_evict_age: le_u32 ~
+            erasure_code_profile: &'a str,
+            last_force_resend: le_u32, || {
+                ClientPgInfo {
+                    encoding_version: encoding_version,
+                    min_compat_version: min_compat_version,
+                    size: size,
+                    hitset_type: hitset_type
+                }
+            }
+        );
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
@@ -1317,7 +1347,7 @@ impl CephPrimitive for ClientHitSetParams{
     }
 }
 #[derive(Debug,Eq,PartialEq)]
-pub struct ClientOsdData{
+pub struct ClientOsdData<'a>{
     encoding_version: u8,
     min_compat_version: u8,
     size: u32,
@@ -1326,7 +1356,7 @@ pub struct ClientOsdData{
     time_created: Utime,
     last_modified: Utime,
     //pools: Vec<ClientPoolInfo>,
-    pool_ids: Vec<String>,
+    pool_ids: Vec<&'a str>,
     highest_pool_id: u32,
     flags: u32,
     highest_osd_num: u32,
@@ -1345,6 +1375,39 @@ pub struct OsdInfo{
     up_through: u32,
     down_at: u32,
     lost_at: u32,
+}
+
+impl CephPrimitive for OsdInfo{
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            encoding_version = le_u8 ~
+            last_clean_being = le_u32 ~
+            last_clean_end = le_u32 ~
+            up_from = le_u32 ~
+            up_through = le_u32 ~
+            down_at = le_u32 ~
+            lost_at = le_u32, ||{
+                OsdInfo{
+                    encoding_version: encoding_version,
+                    last_clean_being: last_clean_being,
+                    last_clean_end: last_clean_end,
+                    up_from: up_from,
+                    up_through: up_through,
+                    down_at: down_at,
+                    lost_at: lost_at
+                }
+            }
+        );
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        try!(buffer.write_u8(self.encoding_version));
+        try!(buffer.write_u32::<LittleEndian>(self.epoch));
+
+        return Ok(buffer);
+    }
 }
 
 #[derive(Debug,Eq,PartialEq)]
@@ -1375,7 +1438,7 @@ pub struct MonMap{
 }
 
 impl CephPrimitive for MonMap{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         let mut monitors: Vec<Monitor> = Vec::new();
 
         let encoding_version = try!(cursor.read_u8());
@@ -1413,7 +1476,7 @@ pub struct ObjectId{
 }
 
 impl CephPrimitive for ObjectId {
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         let size = try!(cursor.read_u32::<LittleEndian>());
         let mut data_buf: Vec<u8> = Vec::new();
         for _ in 0 .. size{
@@ -1450,24 +1513,26 @@ pub struct Operation{
 }
 
 impl CephPrimitive for Operation {
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let operation = try!(cursor.read_u16::<LittleEndian>());
-        let flags = try!(cursor.read_u32::<LittleEndian>());
-        let offset = try!(cursor.read_u64::<LittleEndian>());
-        let size = try!(cursor.read_u64::<LittleEndian>());
-        let truncate_size = try!(cursor.read_u64::<LittleEndian>());
-        let truncate_seq = try!(cursor.read_u32::<LittleEndian>());
-        let payload_size = try!(cursor.read_u32::<LittleEndian>());
-
-        return Ok(Operation{
-            operation: operation,
-            flags:flags,
-            offset: offset,
-            size: size,
-            truncate_size: truncate_size,
-            truncate_seq: truncate_seq,
-            payload_size: payload_size,
-        });
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            operation: le_u16 ~
+            flags: le_u32 ~
+            offset: le_u64 ~
+            size: le_u64 ~
+            truncate_size: le_u64 ~
+            truncate_seq: le_u32 ~
+            payload_size: le_u32, ||{
+                Operation{
+                    operation: operation,
+                    flags: flags,
+                    offset: offset
+                    size: size,
+                    truncate_size: truncate_size
+                    truncate_seq: truncate_seq
+                    payload_size: payload_size,
+                }
+            }
+        );
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
@@ -1491,14 +1556,16 @@ pub struct ReplayVersion {
 }
 
 impl CephPrimitive for ReplayVersion {
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let version = try!(cursor.read_u64::<LittleEndian>());
-        let epoch = try!(cursor.read_u32::<LittleEndian>());
-
-        return Ok(ReplayVersion{
-            version: version,
-            epoch: epoch,
-        });
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            version: le_u64 ~
+            epoch: le_u32,
+            || {
+                ReplayVersion{
+                    version: version,
+                    epoch: epoch,
+                }
+            });
     }
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer:Vec<u8> = Vec::new();
@@ -1526,27 +1593,22 @@ pub struct CephOsdOperationReply{
 }
 
 impl CephPrimitive for CephOsdOperationReply{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let object_id = try!(ObjectId::read_from_wire(cursor));
-        let pg = try!(PlacementGroup::read_from_wire(cursor));
-        let flag_bits = try!(cursor.read_u32::<LittleEndian>());
-        let flags = match OsdOp::from_bits(flag_bits){
-            Some(flags) => flags,
-            None => {
-                return Err(SerialError::new(format!("Unable to convert {:?} to flags", flag_bits)));
-            }
-        };
-        let result = try!(cursor.read_u32::<LittleEndian>());
-        let bad_replay_version = try!(ReplayVersion::read_from_wire(cursor));
-        let osd_map_epoch = try!(cursor.read_u32::<LittleEndian>());
-        let operation_count = try!(cursor.read_u32::<LittleEndian>());
-        let operation = try!(Operation::read_from_wire(cursor));
-        let retry_attempt = try!(cursor.read_u32::<LittleEndian>());
-        let operation_return_value = try!(cursor.read_u32::<LittleEndian>());
-        let replay_version = try!(ReplayVersion::read_from_wire(cursor));
-        let user_version = try!(cursor.read_u64::<LittleEndian>());
-
-        return Ok(
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+        object_id: call!(ObjectId::read_from_wire) ~
+        placement_group: call!(PlacementGroup::read_from_wire) ~
+        flags_bits: le_u32 ~
+        flags: call!(OsdOp::from_bits(flags_bits)) ~
+        result: le_u32 ~
+        bad_replay_version: call!(ReplayVersion::read_from_wire) ~
+        osd_map_epoch: le_u32 ~
+        operation_count: le_u32 ~
+        operation: call!(Operation::read_from_wire) ~
+        retry_attempt: le_u32 ~
+        operation_return_value: le_u32 ~
+        replay_version: call!(ReplayVersion::read_from_wire) ~
+        user_version: le_u64,
+        ||{
             CephOsdOperationReply{
                 object_id: object_id,
                 placement_group: pg,
@@ -1560,7 +1622,8 @@ impl CephPrimitive for CephOsdOperationReply{
                 operation_return_value: operation_return_value,
                 replay_version: replay_version,
                 user_version: user_version,
-            });
+            }
+        });
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
@@ -1603,9 +1666,46 @@ pub struct CephOsdOperation{
 }
 
 impl CephPrimitive for CephOsdOperation{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let client = try!(cursor.read_u32::<LittleEndian>());
-        let map_epoch = try!(cursor.read_u32::<LittleEndian>());
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            client: le_u32 ~
+            map_epoch: le_u32 ~
+            flags_bits: le_u32 ~
+            flags: call!(OsdOp::from_bits(flags_bits)) ~
+            modification_time: call!(Utime::read_from_wire) ~
+            reassert_version: le_u64 ~
+            reassert_epoch: le_u32 ~
+            locator: call!(ObjectLocator::read_from_wire) ~
+            placement_group: call!(PlacementGroup::read_from_wire) ~
+            object_id: call!(ObjectId::read_from_wire) ~
+            operation_count: le_u16 ~
+            operation: call!(Operation::read_from_wire) ~
+            snapshot_id: le_u64 ~
+            snapshot_seq: le_u64 ~
+            snapshot_count: le_u32 ~
+            retry_attempt: le_u32 ~
+            payload: call!(vec![]),
+            ||{
+                CephOsdOperation{
+                    client: client,
+                    map_epoch: map_epoch,
+                    flags: flags,
+                    modification_time: utime,
+                    reassert_version: reassert_version,
+                    reassert_epoch: reassert_epoch,
+                    locator: locator,
+                    placement_group: pg,
+                    object_id: object_id,
+                    operation_count: operation_count,
+                    operation: operation,
+                    snapshot_id: snapshot_id,
+                    snapshot_seq: snapshot_seq,
+                    snapshot_count: snapshot_count,
+                    retry_attempt: retry_attempt,
+                    payload: payload_buffer,
+                }
+            }
+        );
         let flag_bits = try!(cursor.read_u32::<LittleEndian>());
         let flags = match OsdOp::from_bits(flag_bits){
             Some(flags) => flags,
@@ -1613,49 +1713,6 @@ impl CephPrimitive for CephOsdOperation{
                 return Err(SerialError::new(format!("Unable to convert {:?} to flags", flag_bits)));
             }
         };
-        let utime = try!(Utime::read_from_wire(cursor));
-        let reassert_version = try!(cursor.read_u64::<LittleEndian>());
-        let reassert_epoch = try!(cursor.read_u32::<LittleEndian>());
-        let locator = try!(ObjectLocator::read_from_wire(cursor));
-        let pg = try!(PlacementGroup::read_from_wire(cursor));
-        let object_id = try!(ObjectId::read_from_wire(cursor));
-        let operation_count = try!(cursor.read_u16::<LittleEndian>());
-        let operation = try!(Operation::read_from_wire(cursor));
-
-        let snapshot_id = try!(cursor.read_u64::<LittleEndian>());
-        let snapshot_seq = try!(cursor.read_u64::<LittleEndian>());
-        let snapshot_count = try!(cursor.read_u32::<LittleEndian>());
-        let retry_attempt = try!(cursor.read_u32::<LittleEndian>());
-        //TODO: maybe we should skip copying this into a buffer.  I don't really care
-        //what the data contained is.  I mostly care about the READ/WRITE sizes.
-        let payload_buffer: Vec<u8> = Vec::new();
-
-        //Skipping the copy of the data because I only really care about the read/write sizes
-        //We could add this in again if it's really critical to know exactly what is being written
-        /*for _ in 0..operation.payload_size{
-            let b = try!(cursor.read_u8());
-            payload_buffer.push(b);
-        }*/
-
-        return Ok(
-            CephOsdOperation{
-                client: client,
-                map_epoch: map_epoch,
-                flags: flags,
-                modification_time: utime,
-                reassert_version: reassert_version,
-                reassert_epoch: reassert_epoch,
-                locator: locator,
-                placement_group: pg,
-                object_id: object_id,
-                operation_count: operation_count,
-                operation: operation,
-                snapshot_id: snapshot_id,
-                snapshot_seq: snapshot_seq,
-                snapshot_count: snapshot_count,
-                retry_attempt: retry_attempt,
-                payload: payload_buffer,
-            });
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
@@ -1724,7 +1781,7 @@ pub struct AuthMessage{
 }
 
 impl CephPrimitive for AuthMessage{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         let paxos_msg = try!(PaxosMessage::read_from_wire(cursor));
 
         let mut supported_protocols:Vec<CephAuthProtocol> = Vec::new();
@@ -1802,15 +1859,18 @@ pub struct PaxosMessage {
 }
 
 impl CephPrimitive for PaxosMessage{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let version = try!(cursor.read_u64::<LittleEndian>());
-        let mon = try!(cursor.read_i16::<LittleEndian>());
-        let mon_tid = try!(cursor.read_u64::<LittleEndian>());
-        return Ok(PaxosMessage{
-            version: version,
-            mon: mon,
-            mon_tid: mon_tid,
-        });
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            version: le_u64 ~
+            mon: le_u16 ~
+            mon_tid: le_u64,
+            ||{
+                PaxosMessage{
+                    version: version,
+                    mon: mon,
+                    mon_tid: mon_tid,
+                }
+            });
     }
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
@@ -1823,19 +1883,19 @@ impl CephPrimitive for PaxosMessage{
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct MonCommand {
+pub struct MonCommand<'a> {
     pub paxos: PaxosMessage,
-    pub fsid: String,
+    pub fsid: &'a str,
     pub argument_count: u32,
-    pub arguments: Vec<String> //Size: u32, utf8 data
+    pub arguments: Vec<&'a str> //Size: u32, utf8 data
 }
 
-impl CephPrimitive for MonCommand{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+impl CephPrimitive for MonCommand<'a>{
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         let paxos = try!(PaxosMessage::read_from_wire(cursor));
         let fsid = try!(read_string(cursor));
         let arg_count = try!(cursor.read_u32::<LittleEndian>());
-        let mut args: Vec<String> = Vec::with_capacity(arg_count as usize);
+        let mut args: Vec<&'a str> = Vec::with_capacity(arg_count as usize);
 
         for _ in 0..arg_count{
             let arg = try!(read_string(cursor));
@@ -1876,19 +1936,18 @@ pub struct CephSourceName{
 }
 
 impl CephPrimitive for CephSourceName{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let entity_type_bits = try!(cursor.read_u8());
-        let entity_type = match CephEntity::from_u8(entity_type_bits){
-            Some(t) => t,
-            None => {
-                return Err(SerialError::new(format!("Unable to convert {:?} to entity_type", entity_type_bits)));
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            entity_type_bits: le_u8 ~
+            entity_type: call!(CephEntity::from_u8(entity_type_bits)) ~
+            num: le_u64,
+            || {
+                CephSourceName{
+                    entity_type: entity_type,
+                    num: entity_id,
+                }
             }
-        };
-        let entity_id = try!(cursor.read_u64::<LittleEndian>());
-        return Ok(CephSourceName{
-            entity_type: entity_type,
-            num: entity_id,
-        });
+        );
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
@@ -1902,13 +1961,13 @@ impl CephPrimitive for CephSourceName{
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct CephEntityName{
+pub struct CephEntityName<'a>{
     pub entity_type: CephEntity,
-    pub id: String,
+    pub id: &'a str,
 }
 
 impl CephPrimitive for CephEntityName{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         let entity_type_bits = try!(cursor.read_u32::<LittleEndian>());
         let entity_type = match CephEntity::from_u32(entity_type_bits){
             Some(t) => t,
@@ -1951,13 +2010,16 @@ impl Utime{
 }
 
 impl CephPrimitive for Utime{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let tv_sec = try!(cursor.read_u32::<LittleEndian>());
-        let tv_nsec = try!(cursor.read_u32::<LittleEndian>());
-        return Ok(Utime {
-            tv_sec: tv_sec,
-            tv_nsec: tv_nsec,
-        });
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            tv_sec: le_u32 ~
+            tv_nsec: le_u32,
+            ||{
+                Utime {
+                    tv_sec: tv_sec,
+                    tv_nsec: tv_nsec,
+                }
+            });
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
@@ -1989,62 +2051,44 @@ pub struct CephMsgHeader {
 }
 
 impl CephPrimitive for CephMsgHeader{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let sequenece_num = try!(cursor.read_u64::<LittleEndian>());
-        let transcation_id = try!(cursor.read_u64::<LittleEndian>());
-
-        let msg_type_bits = try!(cursor.read_u16::<LittleEndian>());
-        //debug!("msg_type bits: {:?}", &msg_type_bits);
-        let msg_type = match CephMsgType::from_u16(msg_type_bits){
-            Some(t) => t,
-            None => {
-                return Err(SerialError::new(format!("Unable to convert {:?} to msg_type", msg_type_bits)));
-            }
-        };
-        let priority_bits = try!(cursor.read_u16::<LittleEndian>());
-        /*
-        println!("priority_bits: {:?}", &priority_bits);
-        let priority = match CephPriority::from_u16(priority_bits){
-            Some(t) => t,
-            None => {
-                println!("Oops 2");
-                return Err(SerialError::new(format!("Unable to convert {:?} to priority", priority_bits)));
-            }
-        };
-        */
-        let version = try!(cursor.read_u16::<LittleEndian>());
-        let front_len = try!(cursor.read_u32::<LittleEndian>());
-        let middle_len = try!(cursor.read_u32::<LittleEndian>());
-        let data_len = try!(cursor.read_u32::<LittleEndian>());
-        let data_off = try!(cursor.read_u16::<LittleEndian>());
-
-        let source_name = try!(CephSourceName::read_from_wire(cursor));
-
-        let compat_version = try!(cursor.read_u16::<LittleEndian>());
-        let reserved = try!(cursor.read_u16::<LittleEndian>());
-        let crc = try!(cursor.read_u32::<LittleEndian>());
-
-        return Ok(
-            CephMsgHeader{
-            sequence_num: sequenece_num,
-            transaction_id: transcation_id,
-            msg_type: msg_type,
-            priority: priority_bits,
-            version: version,
-            front_len: front_len,
-            middle_len: middle_len,
-            data_len: data_len,
-            data_off: data_off,
-            entity_name: source_name,
-            compat_version: compat_version,
-            reserved: reserved,
-            crc: crc,
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            sequence_num: le_u64 ~
+            transaction_id: le_u64 ~
+            msg_type_bits: le_u16 ~
+            msg_type: call!(CephMsgType::from_u16(msg_type_bits)) ~
+            priority: priority_bits
+            version: le_u16 ~
+            front_len: le_u32 ~
+            middle_len: le_u32 ~
+            data_len: le_u32 ~
+            data_off: le_u16 ~
+            entity_name: call!(CephSourceName::read_from_wire) ~
+            compat_version: le_u16 ~
+            reserved: le_u16 ~
+            crc: le_u32,
+            ||{
+                CephMsgHeader{
+                    sequence_num: sequenece_num,
+                    transaction_id: transcation_id,
+                    msg_type: msg_type,
+                    priority: priority_bits,
+                    version: version,
+                    front_len: front_len,
+                    middle_len: middle_len,
+                    data_len: data_len,
+                    data_off: data_off,
+                    entity_name: source_name,
+                    compat_version: compat_version,
+                    reserved: reserved,
+                    crc: crc,
+                }
             }
         );
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-        // let mut digest = crc32::Digest::new(crc32::IEEE);
+        // let mut digest = crc32::Digest::new(crc32::CASTAGNOLI);
 
         let mut buffer:Vec<u8> = Vec::new();
         try!(buffer.write_u64::<LittleEndian>(self.sequence_num));
@@ -2077,21 +2121,21 @@ pub struct CephMsgFooter {
 }
 
 impl CephPrimitive for CephMsgFooter{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let front_crc = try!(cursor.read_u32::<LittleEndian>());
-        let middle_crc = try!(cursor.read_u32::<LittleEndian>());
-        let data_crc = try!(cursor.read_u32::<LittleEndian>());
-
-        let crypto_sig = try!(cursor.read_u64::<LittleEndian>());
-        let flags = try!(cursor.read_u8());
-
-        return Ok(
-            CephMsgFooter{
-                front_crc: front_crc,
-                middle_crc: middle_crc,
-                data_crc: data_crc,
-                crypto_sig: crypto_sig,
-                flags: flags
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            front_crc: le_u32 ~
+            middle_crc: le_u32 ~
+            data_crc: le_u32 ~
+            crypto_sig: le_u64 ~
+            flags: le_u8,
+            ||{
+                CephMsgFooter{
+                    front_crc: front_crc,
+                    middle_crc: middle_crc,
+                    data_crc: data_crc,
+                    crypto_sig: crypto_sig,
+                    flags: flags
+                }
             }
         );
     }
@@ -2116,7 +2160,7 @@ pub struct CephAuthOperation {
 }
 
 impl CephPrimitive for CephAuthOperation{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         let mut auth_data: Vec<u8> = Vec::new();
 
         let authorizer_bits = try!(cursor.read_u32::<LittleEndian>());
@@ -2150,16 +2194,16 @@ impl CephPrimitive for CephAuthOperation{
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct CephAuthOperationReply {
+pub struct CephAuthOperationReply<'a> {
     protocol: CephAuthProtocol,
     result: i32,
     global_id: u64,
-    result_msg: String,
+    result_msg: &'a str,
     result_buffer: Vec<u8>,
 }
 
 impl CephPrimitive for CephAuthOperationReply{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         let authorizer_bits = try!(cursor.read_u32::<LittleEndian>());
         let authorizer_protocol = match CephAuthProtocol::from_u32(authorizer_bits){
             Some(authorizer_protocol) => authorizer_protocol,
@@ -2194,6 +2238,7 @@ struct CephMsgTagAck{
     tag: CephMsg, //0x08
     seq: u64 //Sequence number of msg being acknowledged
 }
+
 impl CephMsgTagAck{
     fn new(sequence_number: u64) -> CephMsgTagAck{
         return CephMsgTagAck{
@@ -2204,20 +2249,18 @@ impl CephMsgTagAck{
 }
 
 impl CephPrimitive for CephMsgTagAck{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let tag_bits = try!(cursor.read_u8());
-        let msg = match CephMsg::from_u8(tag_bits){
-            Some(t) => t,
-            None => {
-                return Err(SerialError::new(format!("Unable to convert {:?} to CephMsg", tag_bits)));
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            tag_bits: le_u8 ~
+            msg: call!(CephMsg::from_u8(tag_bits)) ~
+            seq: le_u64,
+            ||{
+                CephMsgTagAck{
+                    tag: msg,
+                    seq: seq,
+                }
             }
-        };
-        let seq = try!(cursor.read_u64::<LittleEndian>());
-
-        return Ok(CephMsgTagAck{
-            tag: msg,
-            seq: seq,
-        });
+        );
     }
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
@@ -2244,20 +2287,18 @@ impl CephMsgKeepAlive{
 }
 
 impl CephPrimitive for CephMsgKeepAlive{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let tag = try!(cursor.read_u8());
-        let msg = match CephMsg::from_u8(tag){
-            Some(t) => t,
-            None => {
-                return Err(SerialError::new(format!("Unable to convert {:?} to CephMsg", tag)));
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            tag_bits: le_u8 ~
+            msg: call!(CephMsg::from_u8(tag_bits)) ~
+            data: le_u8,
+            ||{
+                CephMsgKeepAlive{
+                    tag: msg,
+                    data: data,
+                }
             }
-        };
-        let data = try!(cursor.read_u8());
-
-        return Ok(CephMsgKeepAlive{
-            tag: msg,
-            data: data,
-        });
+        );
     }
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
@@ -2289,20 +2330,18 @@ impl CephMsgKeepAlive2{
 }
 
 impl CephPrimitive for CephMsgKeepAlive2{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let tag_bits = try!(cursor.read_u8());
-        let msg = match CephMsg::from_u8(tag_bits){
-            Some(t) => t,
-            None => {
-                return Err(SerialError::new(format!("Unable to convert {:?} to CephMsg", tag_bits)));
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            tag_bits: le_u8 ~
+            msg: call!(CephMsg::from_u8(tag_bits)) ~
+            timestamp: call!(Utime::read_from_wire),
+            ||{
+                CephMsgKeepAlive2{
+                    tag: msg,
+                    timestamp: timestamp,
+                }
             }
-        };
-        let time = try!(Utime::read_from_wire(cursor));
-
-        return Ok(CephMsgKeepAlive2{
-            tag: msg,
-            timestamp: time,
-        });
+        );
     }
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
@@ -2337,21 +2376,18 @@ impl CephMsgKeepAlive2Ack {
 }
 
 impl CephPrimitive for CephMsgKeepAlive2Ack{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        let tag_bits = try!(cursor.read_u8());
-        let msg = match CephMsg::from_u8(tag_bits){
-            Some(t) => t,
-            None => {
-                return Err(SerialError::new(format!("Unable to convert {:?} to CephMsg", tag_bits)));
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            tag_bits: le_u8 ~
+            msg: call!(CephMsg::from_u8(tag_bits)) ~
+            timestamp: call!(Utime::read_from_wire),
+            ||{
+                CephMsgKeepAlive2Ack{
+                    tag: msg,
+                    timestamp: timestamp,
+                }
             }
-        };
-
-        let time = try!(Utime::read_from_wire(cursor));
-
-        return Ok(CephMsgKeepAlive2Ack{
-            tag: msg,
-            timestamp: time,
-        });
+        );
     }
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
@@ -2373,11 +2409,13 @@ pub struct EntityAddr{
 }
 
 impl CephPrimitive for EntityAddr{
-    fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, SerialError>{
-        //type
-        let _ = try!(cursor.read_u32::<LittleEndian>());
-        let nonce = try!(cursor.read_u32::<LittleEndian>());
-        //type-str
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            _: le_u32 ~
+            nonce: le_u32 ~
+            address_family: le_u16 ~
+
+        );
         let address_family = try!(cursor.read_u16::<BigEndian>());
         match address_family{
             0x0002 => {

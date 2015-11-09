@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #[macro_use] extern crate enum_primitive;
 #[macro_use] extern crate bitflags;
+#[macro_use] extern crate nom;
 #[macro_use] extern crate log;
 extern crate byteorder;
 extern crate ease;

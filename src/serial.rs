@@ -443,17 +443,10 @@ impl<'a> CephPrimitive for CephMsgrMsg<'a>{
                 }
             });
         /*
-        //CephMsg is sandwiched between these two fields
-        let messages = try!(read_messages_from_wire(cursor, &header.msg_type));
-        debug!("CephMsgrMsg messages: {:?}", &messages);
-
         //Skip the footer for now
         //If we had control of the TCP Socket than sure we could keep reading and get the footer
         //but for pcap packets we don't have the full packet so this becomes a problem.
         //let footer = try!(CephMsgFooter::read_from_wire(cursor));
-        //println!("footer: {:?}", &footer);
-
-        return Ok(});
         */
     }
 
@@ -804,56 +797,80 @@ pub enum Message<'a>{
 }
 
 //Decode the msg from the wire and return the correct variant
-fn read_messages_from_wire<'a>(cursor: &[u8], msg_type: &CephMsgType) -> nom::IResult<&'a [u8], Vec<Message<'a>>>{
-    let mut messages: Vec<Message> = Vec::new();
+fn read_messages_from_wire<'a>(cursor: &'a [u8], msg_type: &CephMsgType) -> nom::IResult<&'a [u8], Vec<Message<'a>>>{
     match msg_type{
         &CephMsgType::MsgAuth => {
-            debug!("CephAuth");
-            let authop = try!(AuthMessage::read_from_wire(cursor));
-            messages.push(Message::Auth(authop));
-            return Ok(messages);
+            chain!(cursor,
+                authop: call!(AuthMessage::read_from_wire),
+                ||{
+                    let v:Vec<Message> = Vec::new();
+                    v.push(Message::Auth(authop));
+                    v
+                }
+            )
         },
         &CephMsgType::MsgAuthReply => {
-            debug!("CephAuthOperationReply");
-            let auth_reply = try!(CephAuthOperationReply::read_from_wire(cursor));
-            messages.push(Message::AuthReply(auth_reply));
-            return Ok(messages);
+            chain!(cursor,
+                auth_reply: call!(CephAuthOperationReply::read_from_wire),
+                || {
+                    let v:Vec<Message> = Vec::new();
+                    v.push(Message::AuthReply(auth_reply));
+                    v
+                }
+            )
         },
         &CephMsgType::MsgOsdOp => {
-            debug!("CephOsdOperation");
-            let osdop = try!(CephOsdOperation::read_from_wire(cursor));
-            debug!("CephOsdOperation parsed: {:?}", &osdop);
-            messages.push(Message::OsdOp(osdop));
-            return Ok(messages);
+            chain!(cursor,
+                osdop: call!(CephOsdOperation::read_from_wire),
+                || {
+                    let v:Vec<Message> = Vec::new();
+                    v.push(Message::OsdOp(osdop));
+                    v
+                }
+            )
         },
         &CephMsgType::MsgOsdOpReply => {
-            debug!("CephOsdOperationReply");
-            let op_reply = try!(CephOsdOperationReply::read_from_wire(cursor));
-            debug!("CephOsdOperationReply parsed: {:?}", &op_reply);
-            messages.push(Message::OsdOpRepl(op_reply));
-            return Ok(messages);
+            chain!(cursor,
+                op_reply: call!(CephOsdOperationReply::read_from_wire),
+                || {
+                    let v:Vec<Message> = Vec::new();
+                    v.push(Message::OsdOpRepl(op_reply));
+                    v
+                }
+            )
         },
         &CephMsgType::MsgOsdSubop => {
-            debug!("CephOsdSubOperation");
-            let osdop = try!(CephOsdOperation::read_from_wire(cursor));
-            debug!("subop: {:?}", &osdop);
-            messages.push(Message::OsdSubop(osdop));
-            return Ok(messages);
+            chain!(cursor,
+                osdop: call!(CephOsdOperation::read_from_wire),
+                || {
+                    let v:Vec<Message> = Vec::new();
+                    v.push(Message::OsdSubop(osdop));
+                    v
+                }
+            )
         },
         &CephMsgType::MsgOsdSubopReply => {
-            debug!("CephOsdSubOperationReply");
-            let osdop = try!(CephOsdOperationReply::read_from_wire(cursor));
-            messages.push(Message::OsdSubopReply(osdop));
-            return Ok(messages);
+            chain!(cursor,
+                osdop: call!(CephOsdOperationReply::read_from_wire),
+                || {
+                    let v:Vec<Message> = Vec::new();
+                    v.push(Message::OsdSubopReply(osdop));
+                    v
+                }
+            )
         },
         &CephMsgType::MsgMonCommand =>{
-            let mon_command = try!(MonCommand::read_from_wire(cursor));
-            messages.push(Message::MonCommand(mon_command));
-            return Ok(messages);
-        }
+            chain!(cursor,
+                mon_command: call!(MonCommand::read_from_wire),
+                || {
+                    let v:Vec<Message> = Vec::new();
+                    v.push(Message::MonCommand(mon_command));
+                    v
+                }
+            )
+        },
         _ => {
-            messages.push(Message::Nop);
-            return Ok(messages);
+            return nom::IResult::Done(cursor, vec![Message::Nop]);
         },
     }
 }
@@ -1909,7 +1926,7 @@ impl<'a> CephPrimitive for CephEntityName<'a>{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             entity_type_bits: le_u8 ~
-            entity_type: call!(CephEntity::from_u8(entity_type_bits)) ~
+            entity_type: expr_opt!(CephEntity::from_u8(entity_type_bits)) ~
             id: parse_str,
             ||{
                 CephEntityName{
@@ -2460,15 +2477,6 @@ fn parse_str<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], &'a str> {
             s
         }
     );
-}
-
-fn read_string<R: Read>(cursor: &mut R) -> Result<String, SerialError>{
-    let mut buffer = Vec::new();
-    let length = try!(cursor.read_u32::<LittleEndian>());
-    for _ in 0..length{
-        buffer.push(try!(cursor.read_u8()));
-    }
-    return Ok(String::from_utf8_lossy(&buffer).into_owned());
 }
 
 //Connect to Ceph Monitor and send a hello banner

@@ -127,6 +127,7 @@ pub struct AuthCapsInfo {
     pub caps: String,
 }
 
+/*
 impl serial::CephPrimitive for AuthCapsInfo{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, serial::SerialError>{
         //Struct Version
@@ -162,6 +163,7 @@ impl serial::CephPrimitive for AuthCapsInfo{
         return Ok(buffer);
     }
 }
+*/
 
 pub struct AuthTicket {
     pub name: serial::CephEntity,
@@ -217,6 +219,7 @@ impl AuthTicket{
     }
 }
 
+/*
 impl serial::CephPrimitive for AuthTicket{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, serial::SerialError>{
         //Struct Version
@@ -246,7 +249,6 @@ impl serial::CephPrimitive for AuthTicket{
             }
         );
     }
-
 	fn write_to_wire(&self) -> Result<Vec<u8>, serial::SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
         //Struct Version
@@ -263,6 +265,7 @@ impl serial::CephPrimitive for AuthTicket{
         return Ok(buffer);
     }
 }
+*/
 
 pub struct CryptoAesKeyHandler{
     pub encryption_key: String,

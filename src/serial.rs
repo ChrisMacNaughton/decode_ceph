@@ -8,7 +8,7 @@ extern crate uuid;
 //Crates
 use self::byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use self::crc::Hasher32;
-use self::nom::{le_u8, le_u16, le_u32, le_u64, be_u16};
+use self::nom::{le_u8, le_i16, le_u16, le_i32, le_u32, le_u64, be_u16};
 use self::num::FromPrimitive;
 use self::uuid::{ParseError, Uuid};
 //Std libs
@@ -310,15 +310,15 @@ impl CephPrimitive for CephMsgConnect{
 	fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             feature_bits: le_u64 ~
-            features: opt!(CephFeatures::from_bits(feature_bits)) ~
+            features: expr_opt!(CephFeatures::from_bits(feature_bits)) ~
             host_type_bits: le_u32 ~
-            host_type: opt!(CephEntity::from_u32(host_type_bits)) ~
+            host_type: expr_opt!(CephEntity::from_u32(host_type_bits)) ~
             global_seq: le_u32 ~
             connect_seq: le_u32 ~
             protocol_bits: le_u32 ~
-            protocol_version: opt!(Protocol::from_u32(protocol_bits)) ~
+            protocol_version: expr_opt!(Protocol::from_u32(protocol_bits)) ~
             authorizer_bits: le_u32 ~
-            authorizer: opt!(CephAuthProtocol::from_u32(protocol_bits)) ~
+            authorizer: expr_opt!(CephAuthProtocol::from_u32(protocol_bits)) ~
             authorizer_len: le_u32 ~
             flags: le_u8,
             ||{
@@ -367,13 +367,13 @@ impl CephPrimitive for CephMsgConnectReply{
 	fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             tag_bits: le_u8 ~
-            tag: opt!(CephMsg::from_u8(tag_bits)) ~
+            tag: expr_opt!(CephMsg::from_u8(tag_bits)) ~
             feature_bits: le_u64 ~
-            features: opt!(CephFeatures::from_bits(feature_bits)) ~
+            features: expr_opt!(CephFeatures::from_bits(feature_bits)) ~
             global_seq: le_u32 ~
             connect_seq: le_u32 ~
             protocol_bits: le_u32 ~
-            protocol_version: opt!(Protocol::from_u32(protocol_bits)) ~
+            protocol_version: expr_opt!(Protocol::from_u32(protocol_bits)) ~
             authorizer_len: le_u32 ~
             flags: le_u8,
             ||{
@@ -408,14 +408,14 @@ impl CephPrimitive for CephMsgConnectReply{
 }
 
 #[derive(Debug)]
-pub struct CephMsgrMsg {
+pub struct CephMsgrMsg<'a>{
     pub tag: CephMsg,//    u8 tag = 0x07;
     pub header: CephMsgHeader,
-    pub msg: Vec<Message>, //header + messages + footer
+    pub msg: Vec<Message<'a>>, //header + messages + footer
     pub footer: CephMsgFooter,
 }
 
-impl CephMsgrMsg{
+impl<'a> CephMsgrMsg<'a>{
     fn new(header: CephMsgHeader, msg: Vec<Message>, footer: CephMsgFooter)->CephMsgrMsg{
         return CephMsgrMsg{
             tag: CephMsg::Msg,
@@ -426,13 +426,13 @@ impl CephMsgrMsg{
     }
 }
 
-impl CephPrimitive for CephMsgrMsg{
+impl<'a> CephPrimitive for CephMsgrMsg<'a>{
 	fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             tag_bits: le_u8 ~
-            tag: opt!(CephMsg::from_u8(tag_bits)) ~
+            tag: expr_opt!(CephMsg::from_u8(tag_bits)) ~
             header: call!(CephMsgHeader::read_from_wire) ~
-            messages: call!(read_messages_from_wire) ~
+            messages: call!(read_messages_from_wire(&header.msg_type)) ~
             footer: call!(CephMsgFooter::read_from_wire),
             ||{
                 CephMsgrMsg{
@@ -733,16 +733,16 @@ pub enum CephMsg{
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub enum Message{
-    Auth(AuthMessage),
-    AuthReply(CephAuthOperationReply),
+pub enum Message<'a>{
+    Auth(AuthMessage<'a>),
+    AuthReply(CephAuthOperationReply<'a>),
     Paxos(PaxosMessage),
     Command,
     CommandReply,
     WatchNotify,
     MsgForward,
     MsgRoute,
-    MonCommand(MonCommand),
+    MonCommand(MonCommand<'a>),
     MonCommandAck,
     Log,
     LogAck,
@@ -762,11 +762,11 @@ pub enum Message{
     OsdFailure,
     OsdMarkMeDown,
     OsdMap,
-    OsdOp(CephOsdOperation),
-    OsdOpRepl(CephOsdOperationReply),
+    OsdOp(CephOsdOperation<'a>),
+    OsdOpRepl(CephOsdOperationReply<'a>),
     OsdPing,
-    OsdSubop(CephOsdOperation),
-    OsdSubopReply(CephOsdOperationReply),
+    OsdSubop(CephOsdOperation<'a>),
+    OsdSubopReply(CephOsdOperationReply<'a>),
     OsdPgtemp,
     OsdPgNotify,
     OsdPgQuery,
@@ -804,7 +804,7 @@ pub enum Message{
 }
 
 //Decode the msg from the wire and return the correct variant
-fn read_messages_from_wire<R: Read>(cursor: &mut R, msg_type: &CephMsgType) -> Result<Vec<Message>, SerialError>{
+fn read_messages_from_wire<'a>(cursor: &[u8], msg_type: &CephMsgType) -> nom::IResult<&'a [u8], Vec<Message<'a>>>{
     let mut messages: Vec<Message> = Vec::new();
     match msg_type{
         &CephMsgType::MsgAuth => {
@@ -1010,7 +1010,7 @@ pub struct Subscription<'a>{
     flags: u8,
 }
 
-impl CephPrimitive for Subscription{
+impl<'a> CephPrimitive for Subscription<'a>{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             str_len: le_u32 ~
@@ -1028,7 +1028,7 @@ impl CephPrimitive for Subscription{
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let buffer:Vec<u8> = Vec::new();
-        let mut buffer = try!(write_string(buffer, &self.name));
+        buffer.extend(self.name.as_bytes());
         try!(buffer.write_u64::<LittleEndian>(self.start_time));
         try!(buffer.write_u8(self.flags));
 
@@ -1037,15 +1037,15 @@ impl CephPrimitive for Subscription{
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct MonitorSubscribe{
-    subscriptions: Vec<Subscription>,
+pub struct MonitorSubscribe<'a>{
+    subscriptions: Vec<Subscription<'a>>,
 }
 
-impl CephPrimitive for MonitorSubscribe{
+impl<'a> CephPrimitive for MonitorSubscribe<'a>{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             number_of_items: le_u32 ~
-            subscriptions: count!(Subscription::read_from_wire, number_of_items),
+            subscriptions: count!(Subscription::read_from_wire, number_of_items as usize),
             ||{
                 MonitorSubscribe{
                     subscriptions: subscriptions
@@ -1066,16 +1066,16 @@ impl CephPrimitive for MonitorSubscribe{
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct ObjectLocator{
+pub struct ObjectLocator<'a>{
     pub encoding_version: u8,
     pub min_compat_version: u8,
     pub size: u32,
     pub pool: u64,
     pub namespace_size: u32,
-    pub namespace_data: Vec<u8>, //TODO: how do parse this?
+    pub namespace_data: &'a [u8],
 }
 
-impl CephPrimitive for ObjectLocator {
+impl<'a> CephPrimitive for ObjectLocator<'a> {
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             encoding_version: le_u8 ~
@@ -1107,10 +1107,8 @@ impl CephPrimitive for ObjectLocator {
         try!(buffer.write_u32::<LittleEndian>(self.size));
         try!(buffer.write_u64::<LittleEndian>(self.pool));
         try!(buffer.write_u32::<LittleEndian>(self.namespace_size));
+        buffer.extend(self.namespace_data);
 
-        for b in &self.namespace_data{
-            try!(buffer.write_u8(*b));
-        }
         return Ok(buffer);
     }
 }
@@ -1159,22 +1157,22 @@ pub struct Monitor<'a>{
     port: u16,
 }
 
-impl CephPrimitive for Monitor{
+impl<'a> CephPrimitive for Monitor<'a>{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             name: parse_str ~
-            ipv4_addr: //opt!(Ipv4Addr)
+            ipv4_addr: opt!(parse_ipv4) ~
+            ipv6_addr: opt!(parse_ipv6) ~
+            port: le_u16,
+            ||{
+                Monitor{
+                    name: name,
+                    ipv4_addr: ipv4_addr,
+                    ipv6_addr: ipv6_addr,
+                    port: port,
+                }
+            }
         );
-        let name = try!(read_string(cursor));
-        //ip_addr stuff
-        let port = try!(cursor.read_u16::<LittleEndian>());
-
-        return Ok(Monitor{
-            name: name,
-            ipv4_addr: None,
-            ipv6_addr: None,
-            port: port,
-        });
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
@@ -1374,7 +1372,12 @@ impl CephPrimitive for OsdInfo{
         let mut buffer:Vec<u8> = Vec::new();
 
         try!(buffer.write_u8(self.encoding_version));
-        try!(buffer.write_u32::<LittleEndian>(self.epoch));
+        try!(buffer.write_u32(self.last_clean_being));
+        try!(buffer.write_u32(self.last_clean_end));
+        try!(buffer.write_u32(self.up_from));
+        try!(buffer.write_u32(self.up_through));
+        try!(buffer.write_u32(self.down_at));
+        try!(buffer.write_u32(self.lost_at));
 
         return Ok(buffer);
     }
@@ -1399,15 +1402,15 @@ pub struct OsdMap{
 
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct MonMap{
+pub struct MonMap<'a>{
     encoding_version: u8,
     min_version: u8,
     fsid: Uuid,
     epoch: u32,
-    monitors: Vec<Monitor>,
+    monitors: Vec<Monitor<'a>>,
 }
 
-impl CephPrimitive for MonMap{
+impl<'a> CephPrimitive for MonMap<'a>{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             encoding_version: le_u8 ~
@@ -1415,7 +1418,7 @@ impl CephPrimitive for MonMap{
             fsid: call!(parse_fsid) ~
             epoch: le_u32 ~
             num_of_monitors: le_u32 ~
-            monitors: count!(Monitor::read_from_wire, num_of_monitors),
+            monitors: count!(Monitor::read_from_wire, num_of_monitors as usize),
             ||{
                 MonMap{
                     encoding_version: encoding_version,
@@ -1439,31 +1442,29 @@ impl CephPrimitive for MonMap{
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct ObjectId{
+pub struct ObjectId<'a>{
     pub size: u32,
-    pub data: Vec<u8>
+    pub data:  &'a [u8]
 }
 
-impl CephPrimitive for ObjectId {
+impl<'a> CephPrimitive for ObjectId<'a> {
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
-        let size = try!(cursor.read_u32::<LittleEndian>());
-        let mut data_buf: Vec<u8> = Vec::new();
-        for _ in 0 .. size{
-            data_buf.push(try!(cursor.read_u8()));
-        }
-        return Ok(ObjectId{
-            size: size,
-            data: data_buf,
-        });
+        chain!(input,
+            size: le_u32 ~
+            data: take!(size),
+            ||{
+                ObjectId{
+                    size: size,
+                    data: data,
+                }
+            }
+        );
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer:Vec<u8> = Vec::new();
         try!(buffer.write_u32::<LittleEndian>(self.size));
-
-        for b in &self.data{
-            try!(buffer.write_u8(*b));
-        }
+        buffer.extend(self.data);
 
         return Ok(buffer);
     }
@@ -1546,8 +1547,8 @@ impl CephPrimitive for ReplayVersion {
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct CephOsdOperationReply{
-    pub object_id: ObjectId,
+pub struct CephOsdOperationReply<'a>{
+    pub object_id: ObjectId<'a>,
     pub placement_group: PlacementGroup,
     pub flags: OsdOp,
     pub result: u32,
@@ -1561,13 +1562,13 @@ pub struct CephOsdOperationReply{
     pub user_version: u64,
 }
 
-impl CephPrimitive for CephOsdOperationReply{
+impl<'a> CephPrimitive for CephOsdOperationReply<'a>{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             object_id: call!(ObjectId::read_from_wire) ~
             placement_group: call!(PlacementGroup::read_from_wire) ~
             flags_bits: le_u32 ~
-            flags: call!(OsdOp::from_bits(flags_bits)) ~
+            flags: expr_opt!(OsdOp::from_bits(flags_bits)) ~
             result: le_u32 ~
             bad_replay_version: call!(ReplayVersion::read_from_wire) ~
             osd_map_epoch: le_u32 ~
@@ -1615,16 +1616,16 @@ impl CephPrimitive for CephOsdOperationReply{
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct CephOsdOperation{
+pub struct CephOsdOperation<'a>{
     pub client: u32,
     pub map_epoch: u32,
     pub flags: OsdOp,
     pub modification_time: Utime,
     pub reassert_version: u64,
     pub reassert_epoch: u32,
-    pub locator: ObjectLocator,
+    pub locator: ObjectLocator<'a>,
     pub placement_group: PlacementGroup,
-    pub object_id: ObjectId,
+    pub object_id: ObjectId<'a>,
     pub operation_count: u16,
     pub operation: Operation, //TODO: Change to Vec<Operation>,
     pub snapshot_id: u64,
@@ -1634,13 +1635,13 @@ pub struct CephOsdOperation{
     pub payload: Vec<u8>,
 }
 
-impl CephPrimitive for CephOsdOperation{
+impl<'a> CephPrimitive for CephOsdOperation<'a>{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             client: le_u32 ~
             map_epoch: le_u32 ~
             flags_bits: le_u32 ~
-            flags: opt!(OsdOp::from_bits(flags_bits)) ~
+            flags: expr_opt!(OsdOp::from_bits(flags_bits)) ~
             modification_time: call!(Utime::read_from_wire) ~
             reassert_version: le_u64 ~
             reassert_epoch: le_u32 ~
@@ -1732,26 +1733,26 @@ Auth consists of a  PaxosMessage + AuthMessage
  */
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct AuthMessage{
+pub struct AuthMessage<'a>{
     paxos_msg: PaxosMessage,
     protocol: CephAuthProtocol,
     encoding_version: u8,
     supported_protocols: Vec<CephAuthProtocol>,
-    entity_name: CephEntityName,
+    entity_name: CephEntityName<'a>,
     global_id: u64,
     map_epoch: u32,
 }
 
-impl CephPrimitive for AuthMessage{
+impl<'a> CephPrimitive for AuthMessage<'a>{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             paxos_msg: call!(PaxosMessage::read_from_wire) ~
             authorizer_bits: le_u32 ~
-            authorizer_protocol: opt!(CephAuthProtocol::from_u32(authorizer_bits)) ~
+            authorizer_protocol: expr_opt!(CephAuthProtocol::from_u32(authorizer_bits)) ~
             skip_1: le_u32 ~
             encoding_version: le_u8 ~
             protocol_fields: le_u32 ~
-            supported_protocols: count!(parse_protocol, protocol_fields) ~
+            supported_protocols: count!(parse_protocol, protocol_fields as usize) ~
             entity_name: call!(CephEntityName::read_from_wire) ~
             global_id: le_u64 ~
             map_epoch: le_u32,
@@ -1805,7 +1806,7 @@ impl CephPrimitive for PaxosMessage{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             version: le_u64 ~
-            mon: le_u16 ~
+            mon: le_i16 ~
             mon_tid: le_u64,
             ||{
                 PaxosMessage{
@@ -1832,7 +1833,7 @@ pub struct MonCommand<'a> {
     pub arguments: Vec<&'a str> //Size: u32, utf8 data
 }
 
-impl CephPrimitive for MonCommand<'a>{
+impl<'a> CephPrimitive for MonCommand<'a>{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             paxos: call!(PaxosMessage::read_from_wire) ~
@@ -1851,16 +1852,16 @@ impl CephPrimitive for MonCommand<'a>{
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
         buffer.extend(try!(self.paxos.write_to_wire()));
+        buffer.extend(self.fsid.as_bytes());
 
-        let mut buffer = try!(write_string(buffer, &self.fsid));
-
-        try!(buffer.write_u32::<LittleEndian>(self.argument_count));
+        try!(buffer.write_u32::<LittleEndian>(self.arguments.len() as u32));
 
         for arg in &self.arguments{
-            let arg_copy = arg.clone();
+            //let arg_copy = arg.clone();
             //TODO: Can't use my write_string fn here.  buffer doesn't live long enough
-            try!(buffer.write_u32::<LittleEndian>(arg_copy.len() as u32));
-            buffer.extend(arg_copy.into_bytes());
+            try!(buffer.write_u32::<LittleEndian>(arg.len() as u32));
+            //buffer.extend(arg_copy.into_bytes());
+            buffer.extend(arg.as_bytes());
         }
 
         return Ok(buffer);
@@ -1877,12 +1878,12 @@ impl CephPrimitive for CephSourceName{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             entity_type_bits: le_u8 ~
-            entity_type: call!(CephEntity::from_u8(entity_type_bits)) ~
+            entity_type: expr_opt!(CephEntity::from_u8(entity_type_bits)) ~
             num: le_u64,
             || {
                 CephSourceName{
                     entity_type: entity_type,
-                    num: entity_id,
+                    num: num,
                 }
             }
         );
@@ -1904,29 +1905,25 @@ pub struct CephEntityName<'a>{
     pub id: &'a str,
 }
 
-impl CephPrimitive for CephEntityName{
+impl<'a> CephPrimitive for CephEntityName<'a>{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
-        let entity_type_bits = try!(cursor.read_u32::<LittleEndian>());
-        let entity_type = match CephEntity::from_u32(entity_type_bits){
-            Some(t) => t,
-            None => {
-                return Err(SerialError::new(format!("Unable to convert {:?} to entity_type", entity_type_bits)));
+        chain!(input,
+            entity_type_bits: le_u8 ~
+            entity_type: call!(CephEntity::from_u8(entity_type_bits)) ~
+            id: parse_str,
+            ||{
+                CephEntityName{
+                    entity_type: entity_type,
+                    id: id
+                }
             }
-        };
-
-        //Decode the entity name
-        let entity_name = try!(read_string(cursor));
-
-        return Ok(CephEntityName{
-            entity_type: entity_type,
-            id: entity_name,
-        });
+        );
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
         try!(buffer.write_u8(self.entity_type.clone() as u8));
-        let buffer = try!(write_string(buffer, &self.id));
+        buffer.extend(self.id.as_bytes());
         return Ok(buffer);
     }
 }
@@ -1994,8 +1991,8 @@ impl CephPrimitive for CephMsgHeader{
             sequence_num: le_u64 ~
             transaction_id: le_u64 ~
             msg_type_bits: le_u16 ~
-            msg_type: call!(CephMsgType::from_u16(msg_type_bits)) ~
-            priority: priority_bits ~
+            msg_type: expr_opt!(CephMsgType::from_u16(msg_type_bits)) ~
+            priority: le_u16 ~
             version: le_u16 ~
             front_len: le_u32 ~
             middle_len: le_u32 ~
@@ -2007,16 +2004,16 @@ impl CephPrimitive for CephMsgHeader{
             crc: le_u32,
             ||{
                 CephMsgHeader{
-                    sequence_num: sequenece_num,
-                    transaction_id: transcation_id,
+                    sequence_num: sequence_num,
+                    transaction_id: transaction_id,
                     msg_type: msg_type,
-                    priority: priority_bits,
+                    priority: priority,
                     version: version,
                     front_len: front_len,
                     middle_len: middle_len,
                     data_len: data_len,
                     data_off: data_off,
-                    entity_name: source_name,
+                    entity_name: entity_name,
                     compat_version: compat_version,
                     reserved: reserved,
                     crc: crc,
@@ -2091,38 +2088,28 @@ impl CephPrimitive for CephMsgFooter{
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct CephAuthOperation {
+pub struct CephAuthOperation<'a> {
     protocol: CephAuthProtocol,
-    auth_data: Vec<u8>,
+    auth_data: &'a [u8],
     monmap_epoch: u32, // map epoch  (32bits -> 13 epochs/second for 10 years)
 }
 
-impl CephPrimitive for CephAuthOperation{
+impl<'a> CephPrimitive for CephAuthOperation<'a>{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
-        let mut auth_data: Vec<u8> = Vec::new();
-
-        let authorizer_bits = try!(cursor.read_u32::<LittleEndian>());
-        let authorizer_protocol = match CephAuthProtocol::from_u32(authorizer_bits){
-            Some(authorizer_protocol) => authorizer_protocol,
-            None => {
-                return Err(SerialError::new(format!("Unable to convert {:?} to authorizer_protocol", authorizer_bits)));
+        chain!(input,
+            protocol_bits: le_u32 ~
+            protocol: expr_opt!(CephAuthProtocol::from_u32(protocol_bits)) ~
+            auth_data_len: le_u32 ~
+            auth_data: take!(auth_data_len) ~
+            monmap_epoch: le_u32,
+            ||{
+                CephAuthOperation{
+                    protocol: protocol,
+                    auth_data: auth_data,
+                    monmap_epoch: monmap_epoch,
+                }
             }
-        };
-
-        let auth_data_len = try!(cursor.read_u32::<LittleEndian>());
-
-        for _ in 0..auth_data_len{
-            let b = try!(cursor.read_u8());
-            auth_data.push(b);
-        }
-        let monmap_epoch = try!(cursor.read_u32::<LittleEndian>());
-
-        return Ok(CephAuthOperation{
-            protocol: authorizer_protocol,
-            auth_data: auth_data,
-            monmap_epoch: monmap_epoch,
-        });
-
+        );
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
@@ -2137,32 +2124,29 @@ pub struct CephAuthOperationReply<'a> {
     result: i32,
     global_id: u64,
     result_msg: &'a str,
-    result_buffer: Vec<u8>,
+    result_buffer: &'a [u8],
 }
 
-impl CephPrimitive for CephAuthOperationReply{
+impl<'a> CephPrimitive for CephAuthOperationReply<'a>{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
-        let authorizer_bits = try!(cursor.read_u32::<LittleEndian>());
-        let authorizer_protocol = match CephAuthProtocol::from_u32(authorizer_bits){
-            Some(authorizer_protocol) => authorizer_protocol,
-            None => {
-                return Err(SerialError::new(format!("Unable to convert {:?} to authorizer_protocol", authorizer_bits)));
+        chain!(input,
+            protocol_bits: le_u32 ~
+            protocol: expr_opt!(CephAuthProtocol::from_u32(protocol_bits)) ~
+            result: le_i32 ~
+            global_id: le_u64 ~
+            result_msg: parse_str ~
+            result_buffer_len: le_u32 ~
+            result_buffer: take!(result_buffer_len),
+            ||{
+                CephAuthOperationReply{
+                    protocol: protocol,
+                    result: result,
+                    global_id: global_id,
+                    result_msg: result_msg,
+                    result_buffer: result_buffer,
+                }
             }
-        };
-
-        let result = try!(cursor.read_i32::<LittleEndian>());
-        let global_id = try!(cursor.read_u64::<LittleEndian>());
-        let result_msg = try!(read_string(cursor));
-        let result_buffer: Vec<u8> = Vec::new();
-
-        return Ok(CephAuthOperationReply{
-            protocol: authorizer_protocol,
-            result: result,
-            global_id: global_id,
-            result_msg: result_msg,
-            result_buffer: result_buffer,
-        });
-
+        );
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
@@ -2190,7 +2174,7 @@ impl CephPrimitive for CephMsgTagAck{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             tag_bits: le_u8 ~
-            msg: call!(CephMsg::from_u8(tag_bits)) ~
+            msg: expr_opt!(CephMsg::from_u8(tag_bits)) ~
             seq: le_u64,
             ||{
                 CephMsgTagAck{
@@ -2228,7 +2212,7 @@ impl CephPrimitive for CephMsgKeepAlive{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             tag_bits: le_u8 ~
-            msg: call!(CephMsg::from_u8(tag_bits)) ~
+            msg: expr_opt!(CephMsg::from_u8(tag_bits)) ~
             data: le_u8,
             ||{
                 CephMsgKeepAlive{
@@ -2271,7 +2255,7 @@ impl CephPrimitive for CephMsgKeepAlive2{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             tag_bits: le_u8 ~
-            msg: call!(CephMsg::from_u8(tag_bits)) ~
+            msg: expr_opt!(CephMsg::from_u8(tag_bits)) ~
             timestamp: call!(Utime::read_from_wire),
             ||{
                 CephMsgKeepAlive2{
@@ -2317,7 +2301,7 @@ impl CephPrimitive for CephMsgKeepAlive2Ack{
     fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             tag_bits: le_u8 ~
-            msg: call!(CephMsg::from_u8(tag_bits)) ~
+            msg: expr_opt!(CephMsg::from_u8(tag_bits)) ~
             timestamp: call!(Utime::read_from_wire),
             ||{
                 CephMsgKeepAlive2Ack{
@@ -2407,29 +2391,29 @@ impl CephPrimitive for EntityAddr{
     }
 }
 
-fn parse_strs<'a>(i: &'a [u8]) -> IResult<&'a [u8], Vec<& str>>{
+fn parse_strs<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Vec<& str>>{
     chain!(i,
         num_of_str: le_u32 ~
-        strs: count!(parse_str, num_of_str),
+        strs: count!(parse_str, num_of_str as usize),
         ||{
             strs
         }
     );
 }
 
-fn parse_protocol<'a>(i: &'a [u8]) -> IResult<&'a [u8], CephAuthProtocol>{
+fn parse_protocol<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], CephAuthProtocol>{
     chain!(i,
         protocol_bits: le_u32 ~
-        protocol: call!(CephAuthProtocol::from_u32(protocol_bits)),
+        protocol: expr_opt!(CephAuthProtocol::from_u32(protocol_bits)),
         ||{
             protocol
         }
     );
 }
 
-fn parse_ipv4<'a>(i: &'a [u8]) -> IResult<&'a [u8], Ipv4Addr> {
+fn parse_ipv4<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Ipv4Addr> {
+    //tag!(0x0002) ~
     chain!(i,
-        tag!(0x0002) ~
         a: le_u8 ~
         b: le_u8 ~
         c: le_u8 ~
@@ -2440,9 +2424,9 @@ fn parse_ipv4<'a>(i: &'a [u8]) -> IResult<&'a [u8], Ipv4Addr> {
     );
 }
 
-fn parse_ipv6<'a>(i: &'a [u8]) -> IResult<&'a [u8], Ipv4Addr> {
+fn parse_ipv6<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Ipv6Addr> {
+    //tag!(0x000A) ~
     chain!(i,
-        tag!(0x000A) ~
         a: be_u16 ~
         b: be_u16 ~
         c: be_u16 ~
@@ -2457,13 +2441,7 @@ fn parse_ipv6<'a>(i: &'a [u8]) -> IResult<&'a [u8], Ipv4Addr> {
     );
 }
 
-fn write_string(mut out: Vec<u8>, s: &String) -> Result<Vec<u8>, SerialError>{
-    try!(out.write_u32::<LittleEndian>(s.len() as u32));
-    out.extend(s.clone().into_bytes());
-    return Ok(out);
-}
-
-fn parse_fsid<'a>(i: &'a [u8]) -> IResult<&'a [u8], Uuid> {
+fn parse_fsid<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Uuid> {
     chain!(i,
         length: le_u32 ~
         s: take_str!(length) ~
@@ -2474,7 +2452,7 @@ fn parse_fsid<'a>(i: &'a [u8]) -> IResult<&'a [u8], Uuid> {
     );
 }
 
-fn parse_str<'a>(i: &'a [u8]) -> IResult<&'a [u8], &'a str> {
+fn parse_str<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], &'a str> {
     chain!(i,
         length: le_u32 ~
         s: take_str!(length),

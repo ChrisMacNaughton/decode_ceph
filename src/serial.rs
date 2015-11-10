@@ -289,7 +289,7 @@ impl From<ParseError> for SerialError {
 }
 
 pub trait CephPrimitive {
-	fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self> where Self: Sized; //Result<Self, SerialError> where Self: Sized;
+	fn read_from_wire(input: & [u8]) -> nom::IResult<&[u8], Self> where Self: Sized; //Result<Self, SerialError> where Self: Sized;
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>;
 }
 

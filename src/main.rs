@@ -193,7 +193,7 @@ mod tests{
                 //The packet parsing was clean
                 Ok(header) => {
                     //Try to parse some Ceph info from the packet
-                    if let Ok(dissect_result) = super::dissect_msgr(&mut cursor){
+                    if let Ok(dissect_result) = super::dissect_msgr(cursor.get_ref()){
                         let print_result = super::process_packet(header, dissect_result, &args);
                         //println!("Processed packet: {:?}", &print_result);
                     }else{
@@ -593,9 +593,20 @@ fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg, output_args: &
 }
 
 //MSGR is Ceph's outer message protocol
-fn dissect_msgr<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<serial::CephMsgrMsg<'a>, serial::SerialError>{
-    let result = try!(serial::CephMsgrMsg::read_from_wire(cursor));
-    return Ok(result);
+fn dissect_msgr<'a>(input: &[u8])->Result<&serial::CephMsgrMsg<'a>, serial::SerialError>{
+    let result = serial::CephMsgrMsg::read_from_wire(input);
+    match result{
+        nom::IResult::Done(ref leftovers, ref ceph) => {
+                return Ok(ceph);
+        },
+        nom::IResult::Error(ref err) => {
+            return Err(serial::SerialError::new(format!("Parsing error: {:?}", err)));
+        },
+        nom::IResult::Incomplete(ref needed) => {
+            return Err(serial::SerialError::new(format!("Incomplete parsing.  Needed {:?}", needed)));
+        },
+    }
+    //return Ok(result);
 }
 
 fn main() {
@@ -681,7 +692,7 @@ fn main() {
                             //The packet parsing was clean
                             Ok(header) => {
                                 //Try to parse some Ceph info from the packet
-                                if let Ok(dissect_result) = dissect_msgr(&mut cursor){
+                                if let Ok(dissect_result) = dissect_msgr(cursor.get_ref()){
                                     //Try to send the packet off to Elasticsearch, Carbon, stdout, etc
                                     //let args_clone = args.clone();
                                     let print_result = process_packet(header, dissect_result, &args);

@@ -593,7 +593,7 @@ fn process_packet(header: PacketHeader, msg: &serial::CephMsgrMsg, output_args: 
 }
 
 //MSGR is Ceph's outer message protocol
-fn dissect_msgr<'a>(input: &[u8])->Result<&serial::CephMsgrMsg<'a>, serial::SerialError>{
+fn dissect_msgr<'a>(input: &'a [u8])->Result<&serial::CephMsgrMsg<'a>, serial::SerialError>{
     let result = serial::CephMsgrMsg::read_from_wire(input);
     match result{
         nom::IResult::Done(ref leftovers, ref ceph) => {

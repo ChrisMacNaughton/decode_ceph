@@ -597,7 +597,6 @@ fn dissect_msgr<'a>(header: PacketHeader, output_args: &Args, input: &'a [u8])->
     let result = serial::CephMsgrMsg::read_from_wire(input);
     match result{
         nom::IResult::Done(ref leftovers, ref ceph) => {
-                //return Ok(ceph);
                 process_packet(header, ceph, output_args);
                 return Ok(());
         },
@@ -608,7 +607,6 @@ fn dissect_msgr<'a>(header: PacketHeader, output_args: &Args, input: &'a [u8])->
             return Err(serial::SerialError::new(format!("Incomplete parsing.  Needed {:?}", needed)));
         },
     }
-    //return Ok(result);
 }
 
 fn main() {
@@ -693,16 +691,17 @@ fn main() {
                         match parse_etherframe(&mut cursor){
                             //The packet parsing was clean
                             Ok(header) => {
+                                dissect_msgr(header, &args, cursor.get_ref());
                                 //Try to parse some Ceph info from the packet
-                                if let Ok(dissect_result) = dissect_msgr(header, &args, cursor.get_ref()){
+                                //if let Ok(dissect_result) = dissect_msgr(header, &args, cursor.get_ref()){
                                     //Try to send the packet off to Elasticsearch, Carbon, stdout, etc
                                     //let args_clone = args.clone();
                                     //let print_result = process_packet(header, &dissect_result, &args);
                                     //debug!("Processed packet({}): {:?}",&device_name, &print_result);
-                                }else{
+                                //}else{
                                     //Failed to parse Ceph packet.  Ignore
                                     //debug!("Failed to dissect ceph packet from raw packet: {:?}", cursor);
-                                }
+                                //}
                             }
                             //The packet parsing failed
                             Err(_) => {

@@ -6,7 +6,7 @@ extern crate time;
 extern crate uuid;
 
 //Crates
-use self::byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
+use self::byteorder::{BigEndian, LittleEndian, WriteBytesExt};
 use self::crc::Hasher32;
 use self::nom::{le_u8, le_i16, le_u16, le_i32, le_u32, le_u64, be_u16};
 use self::nom::IResult::Done;
@@ -1195,7 +1195,7 @@ impl<'a> CephPrimitive<'a> for Monitor<'a>{
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-        let mut buffer:Vec<u8> = Vec::new();
+        let buffer:Vec<u8> = Vec::new();
 
         return Ok(buffer);
     }
@@ -1857,13 +1857,13 @@ impl<'a> CephPrimitive<'a> for MonCommand<'a>{
         chain!(input,
             paxos: call!(PaxosMessage::read_from_wire) ~
             fsid: call!(parse_fsid) ~
-            num_of_str: le_u32,// ~
-            //arguments: count!(parse_str, num_of_str as usize),
+            num_of_str: le_u32 ~
+            arguments: count!(parse_str, num_of_str as usize),
             ||{
                 MonCommand{
                     paxos: paxos,
                     fsid: fsid,
-                    arguments: vec![],
+                    arguments: arguments,
                 }
             }
         )
@@ -2132,7 +2132,7 @@ impl<'a> CephPrimitive<'a> for CephAuthOperation<'a>{
         )
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
 
         return Ok(buffer);
     }

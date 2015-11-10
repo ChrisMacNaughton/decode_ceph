@@ -5,8 +5,8 @@ extern crate rand;
 extern crate time;
 use serial;
 
-use self::byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use self::num::FromPrimitive;
+//use self::byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+//use self::num::FromPrimitive;
 use self::rust_crypto::{ symmetriccipher, buffer, aes, blockmodes };
 use self::rust_crypto::buffer::{ ReadBuffer, WriteBuffer, BufferResult };
 use self::rand::os::OsRng;

@@ -194,7 +194,7 @@ mod tests{
                 Ok(header) => {
                     //Try to parse some Ceph info from the packet
                     if let Ok(dissect_result) = super::dissect_msgr(cursor.get_ref()){
-                        let print_result = super::process_packet(header, dissect_result, &args);
+                        let print_result = super::process_packet(header, &dissect_result, &args);
                         //println!("Processed packet: {:?}", &print_result);
                     }else{
                         //Failed to parse Ceph packet.  Ignore
@@ -583,7 +583,7 @@ fn log_msg_to_influx(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
     Ok(())
 }
 
-fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
+fn process_packet(header: PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     //Process OSD operation packets
     let _ = log_msg_to_carbon(&header, &msg, output_args);
     let _ = log_msg_to_elasticsearch(&header, &msg, output_args);
@@ -695,7 +695,7 @@ fn main() {
                                 if let Ok(dissect_result) = dissect_msgr(cursor.get_ref()){
                                     //Try to send the packet off to Elasticsearch, Carbon, stdout, etc
                                     //let args_clone = args.clone();
-                                    let print_result = process_packet(header, dissect_result, &args);
+                                    let print_result = process_packet(header, &dissect_result, &args);
                                     debug!("Processed packet({}): {:?}",&device_name, &print_result);
                                 }else{
                                     //Failed to parse Ceph packet.  Ignore

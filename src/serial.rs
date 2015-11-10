@@ -289,7 +289,7 @@ impl From<ParseError> for SerialError {
 }
 
 pub trait CephPrimitive {
-	fn read_from_wire(input: & [u8]) -> nom::IResult<&[u8], Self> where Self: Sized; //Result<Self, SerialError> where Self: Sized;
+	fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self> where Self: Sized; //Result<Self, SerialError> where Self: Sized;
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>;
 }
 
@@ -427,18 +427,18 @@ impl<'a> CephMsgrMsg<'a>{
 }
 
 impl<'a> CephPrimitive for CephMsgrMsg<'a>{
-	fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
+    fn read_from_wire(input: &[u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             tag_bits: le_u8 ~
             tag: expr_opt!(CephMsg::from_u8(tag_bits)) ~
             header: call!(CephMsgHeader::read_from_wire) ~
-            messages: call!(read_messages_from_wire(&header.msg_type)) ~
+            messages: call!(read_messages_from_wire(input, &header.msg_type)) ~
             footer: call!(CephMsgFooter::read_from_wire),
             ||{
                 CephMsgrMsg{
                     tag: tag,
                     header: header,
-                    msg: messages,
+                    msg: vec![],//messages,
                     footer: footer,
                 }
             });
@@ -1389,12 +1389,12 @@ impl CephPrimitive for OsdInfo{
         let mut buffer:Vec<u8> = Vec::new();
 
         try!(buffer.write_u8(self.encoding_version));
-        try!(buffer.write_u32(self.last_clean_being));
-        try!(buffer.write_u32(self.last_clean_end));
-        try!(buffer.write_u32(self.up_from));
-        try!(buffer.write_u32(self.up_through));
-        try!(buffer.write_u32(self.down_at));
-        try!(buffer.write_u32(self.lost_at));
+        try!(buffer.write_u32::<LittleEndian>(self.last_clean_being));
+        try!(buffer.write_u32::<LittleEndian>(self.last_clean_end));
+        try!(buffer.write_u32::<LittleEndian>(self.up_from));
+        try!(buffer.write_u32::<LittleEndian>(self.up_through));
+        try!(buffer.write_u32::<LittleEndian>(self.down_at));
+        try!(buffer.write_u32::<LittleEndian>(self.lost_at));
 
         return Ok(buffer);
     }
@@ -1670,8 +1670,8 @@ impl<'a> CephPrimitive for CephOsdOperation<'a>{
             snapshot_id: le_u64 ~
             snapshot_seq: le_u64 ~
             snapshot_count: le_u32 ~
-            retry_attempt: le_u32 ~
-            payload: call!(vec![]),
+            retry_attempt: le_u32,
+            //payload: call!(vec![]),
             ||{
                 CephOsdOperation{
                     client: client,
@@ -1689,7 +1689,7 @@ impl<'a> CephPrimitive for CephOsdOperation<'a>{
                     snapshot_seq: snapshot_seq,
                     snapshot_count: snapshot_count,
                     retry_attempt: retry_attempt,
-                    payload: payload,
+                    payload: vec![],
                 }
             }
         );
@@ -1855,7 +1855,8 @@ impl<'a> CephPrimitive for MonCommand<'a>{
         chain!(input,
             paxos: call!(PaxosMessage::read_from_wire) ~
             fsid: call!(parse_fsid) ~
-            arguments: parse_strs,
+            num_of_str: le_u32 ~
+            arguments: count!(parse_str, num_of_str as usize),
             ||{
                 MonCommand{
                     paxos: paxos,
@@ -2462,7 +2463,7 @@ fn parse_fsid<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Uuid> {
     chain!(i,
         length: le_u32 ~
         s: take_str!(length) ~
-        fsid: call!(Uuid::parse_str(s)),
+        fsid: expr_res!(Uuid::parse_str(s)),
         ||{
             fsid
         }

@@ -593,11 +593,13 @@ fn process_packet(header: PacketHeader, msg: &serial::CephMsgrMsg, output_args: 
 }
 
 //MSGR is Ceph's outer message protocol
-fn dissect_msgr<'a>(input: &'a [u8])->Result<&serial::CephMsgrMsg<'a>, serial::SerialError>{
+fn dissect_msgr<'a>(header: PacketHeader, output_args: &Args, input: &'a [u8])->Result<(), serial::SerialError>{
     let result = serial::CephMsgrMsg::read_from_wire(input);
     match result{
         nom::IResult::Done(ref leftovers, ref ceph) => {
-                return Ok(ceph);
+                //return Ok(ceph);
+                process_packet(header, ceph, output_args);
+                return Ok(());
         },
         nom::IResult::Error(ref err) => {
             return Err(serial::SerialError::new(format!("Parsing error: {:?}", err)));
@@ -692,11 +694,11 @@ fn main() {
                             //The packet parsing was clean
                             Ok(header) => {
                                 //Try to parse some Ceph info from the packet
-                                if let Ok(dissect_result) = dissect_msgr(cursor.get_ref()){
+                                if let Ok(dissect_result) = dissect_msgr(header, &args, cursor.get_ref()){
                                     //Try to send the packet off to Elasticsearch, Carbon, stdout, etc
                                     //let args_clone = args.clone();
-                                    let print_result = process_packet(header, &dissect_result, &args);
-                                    debug!("Processed packet({}): {:?}",&device_name, &print_result);
+                                    //let print_result = process_packet(header, &dissect_result, &args);
+                                    //debug!("Processed packet({}): {:?}",&device_name, &print_result);
                                 }else{
                                     //Failed to parse Ceph packet.  Ignore
                                     //debug!("Failed to dissect ceph packet from raw packet: {:?}", cursor);

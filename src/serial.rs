@@ -9,6 +9,7 @@ extern crate uuid;
 use self::byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use self::crc::Hasher32;
 use self::nom::{le_u8, le_i16, le_u16, le_i32, le_u32, le_u64, be_u16};
+use self::nom::IResult::Done;
 use self::num::FromPrimitive;
 use self::uuid::{ParseError, Uuid};
 //Std libs
@@ -869,15 +870,9 @@ fn read_messages_from_wire<'a>(cursor: &'a [u8], msg_type: &CephMsgType) -> nom:
             )
         },
         _ => {
-            //chain!(cursor,
-                //nop: call!(Nop::read_from_wire),
-                //|| {
-                    let mut v:Vec<Message> = Vec::new();
-                    v.push(Message::Nop);
-                    return nom::IResult::Done(&cursor[..], v);
-                //}
-            //)
-            //return nom::IResult::Done(cursor, vec![Message::Nop]);
+            let mut v:Vec<Message> = Vec::new();
+            v.push(Message::Nop);
+            Done(&cursor[..], v)
         },
     }
 }

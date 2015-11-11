@@ -10,8 +10,10 @@ use self::byteorder::{BigEndian, LittleEndian, WriteBytesExt};
 use self::crc::Hasher32;
 use self::nom::{le_u8, le_i16, le_u16, le_i32, le_u32, le_u64, be_u16};
 use self::nom::IResult::Done;
+use self::nom::GetOutput;
 use self::num::FromPrimitive;
 use self::uuid::{ParseError, Uuid};
+
 //Std libs
 use std::io;
 use std::io::{ErrorKind};
@@ -57,8 +59,7 @@ mod tests{
         //Get server sockaddr_storage
         let mut server_addr_reply_buffer = Vec::new();
         (&mut stream).take(136).read_to_end(&mut server_addr_reply_buffer).unwrap();
-        let mut server_addr_cursor = Cursor::new(&mut server_addr_reply_buffer[..]);
-        let server_entity_addr = super::EntityAddr::read_from_wire(&mut server_addr_cursor);
+        let server_entity_addr = super::EntityAddr::read_from_wire(&server_addr_reply_buffer);
         println!("Server entity_addr: {:?}", server_entity_addr);
 
         let connect = super::CephMsgConnect{
@@ -88,8 +89,7 @@ mod tests{
         println!("Ceph Msg Reply bytes: {:?}", &msg_reply_buffer);
 
         //Decode it
-        let mut ceph_msg_reply_cursor = Cursor::new(&mut msg_reply_buffer[..]);
-        let ceph_msg_reply = super::CephMsgConnectReply::read_from_wire(&mut ceph_msg_reply_cursor);
+        let ceph_msg_reply = super::CephMsgConnectReply::read_from_wire(&msg_reply_buffer);
         println!("CephMsgConnectReply: {:?}", ceph_msg_reply);
 
         //Create a KeepAlive2
@@ -113,7 +113,7 @@ mod tests{
             supported_protocols: vec![super::CephAuthProtocol::CephAuthCephx],
             entity_name: super::CephEntityName{
                 entity_type: super::CephEntity::Client,
-                id: "admin".to_string(),
+                id: "admin",
             },
             global_id: 0,
             encoding_version: 1,
@@ -122,10 +122,10 @@ mod tests{
 
         let ceph_msgr_auth_msg = super::CephMsgrMsg {
             tag: super::CephMsg::Msg,
-            header: CephMsgHeader{
+            header: super::CephMsgHeader{
                 sequence_num: 1,
                 transaction_id: 0,
-                msg_type: CephMsgType::MsgAuth,
+                msg_type: super::CephMsgType::MsgAuth,
                 priority: super::CephPriority::Default,
                 version: 1,
                 front_len: 60,
@@ -138,35 +138,33 @@ mod tests{
                 },
                 compat_version: 1,
                 reserved: 0,
-                crc: u32, //TODO: how do I calculate this?
+                crc: 0, //TODO: how do I calculate this?
             },
-            msg: vec![auth_msg],
-            footer: CephMsgFooter{
-                front_crc: u32, //TODO: how do I calculate this?
+            msg: vec![super::Message::Auth(auth_msg)],
+            footer: super::CephMsgFooter{
+                front_crc: 0, //TODO: how do I calculate this?
                 middle_crc: 0,
                 data_crc: 0,
                 crypto_sig: 0,
-                flags: u8
+                flags: 0,
             },
         };
 
 
-        let auth_msg_bytes = auth_msg.write_to_wire().unwrap();
+        let auth_msg_bytes = ceph_msgr_auth_msg.write_to_wire().unwrap();
         println!("auth_msg_bytes {:?}", &auth_msg_bytes);
         bytes_written = stream.write(&auth_msg_bytes).unwrap();
         println!("Wrote {:?} auth bytes", bytes_written);
 
         let mut keep_alive2_buffer = Vec::new();
         (&mut stream).take(9).read_to_end(&mut keep_alive2_buffer).unwrap();
-        let mut keep_alive2cursor = Cursor::new(&mut keep_alive2_buffer[..]);
-        let keep_alive2_reply = super::CephMsgKeepAlive2::read_from_wire(&mut keep_alive2cursor);
+        let keep_alive2_reply = super::CephMsgKeepAlive2::read_from_wire(&keep_alive2_buffer);
         println!("Got KeepAlive2: {:?}", keep_alive2_reply);
 
         let mut keep_alive2_ack_buffer = Vec::new();
         (&mut stream).take(9).read_to_end(&mut keep_alive2_ack_buffer).unwrap();
         println!("KeepAlive2Ack {:?}", &keep_alive2_ack_buffer);
-        let mut keep_alive2_ackcursor = Cursor::new(&mut keep_alive2_ack_buffer[..]);
-        let keep_alive2_ack = super::CephMsgKeepAlive2Ack::read_from_wire(&mut keep_alive2_ackcursor);
+        let keep_alive2_ack = super::CephMsgKeepAlive2Ack::read_from_wire(&keep_alive2_ack_buffer);
         println!("Got KeepAlive2Ack: {:?}", keep_alive2_ack);
         //Then MonMap
         //Then AuthReplyMessage
@@ -198,8 +196,7 @@ mod tests{
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xc5,0x48,0x27,0x28,0x00,
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01
         ];
-        let mut cursor = Cursor::new(&auth_packet[..]);
-        let msg = super::CephMsgrMsg::read_from_wire(&mut cursor).unwrap();
+        let msg = super::CephMsgrMsg::read_from_wire(&auth_packet);
         println!("{:?}", msg);
 
         //Ceph sends back an CephMsgTagAck
@@ -350,6 +347,28 @@ impl<'a> CephPrimitive<'a> for CephMsgConnect{
 
         return Ok(buffer);
     }
+}
+
+#[test]
+fn test_ceph_connect_reply(){
+    let bytes = vec![
+        0x01,0xff,0xff,0xff,0xff,0xff,0x2f,0x00,0x00,0x08,0x00,0x00,0x00,0x01,0x00,0x00,
+        0x00,0x0f,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01
+    ];
+    /*
+    let expected_result = CephMsgConnectReply {
+        tag: CephMsg::Ready,
+        features: CephFeatures::CEPH_ALL,
+        global_seq: 8,
+        connect_seq: 1,
+        protocol_version: Protocol::Unknown,
+        authorizer_len: 0,
+        flags: 0,
+        authorizer: vec![],
+    };
+    */
+    let result = CephMsgConnectReply::read_from_wire(&bytes);
+    println!("CephMsgConnectReply parse result: {:?}", result);
 }
 
 #[derive(Debug)]
@@ -692,7 +711,8 @@ pub enum CephAuthProtocol{
 }
 
 enum_from_primitive!{
-#[derive(Debug, Clone)]
+#[repr(u16)]
+#[derive(Debug, Clone,Eq,PartialEq)]
 pub enum CephPriority{
     Low = 64,
     Default = 127,
@@ -702,7 +722,7 @@ pub enum CephPriority{
 }
 
 enum_from_primitive! {
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,Eq,PartialEq)]
 pub enum CephMsg{
     Ready = 1, /* server->client: ready for messages */
     Reset = 2, /* server->client: reset, try again */
@@ -1171,24 +1191,24 @@ impl<'a> CephPrimitive<'a> for PlacementGroup {
 #[derive(Debug,Eq,PartialEq)]
 pub struct Monitor<'a>{
     name: &'a str,
+    entity_addr: EntityAddr,
+    /*
     ipv4_addr: Option<Ipv4Addr>,
     ipv6_addr: Option<Ipv6Addr>,
     port: u16,
+    */
 }
 
 impl<'a> CephPrimitive<'a> for Monitor<'a>{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        println!("Monitor land");
         chain!(input,
             name: parse_str ~
-            ipv4_addr: opt!(parse_ipv4) ~
-            ipv6_addr: opt!(parse_ipv6) ~
-            port: le_u16,
+            entity_addr: call!(EntityAddr::read_from_wire) ~
             ||{
                 Monitor{
                     name: name,
-                    ipv4_addr: ipv4_addr,
-                    ipv6_addr: ipv6_addr,
-                    port: port,
+                    entity_addr: entity_addr,
                 }
             }
         )
@@ -1419,6 +1439,48 @@ pub struct OsdMap{
     newest_map:u32,
 }
 
+#[test]
+fn test_monmap(){
+    let bytes = vec![
+        //unknown bytes
+        /*0x11, 0x02, 0x00, 0x00, */0x03, 0x03, 0x0b, 0x02, 0x00, 0x00, 0xec, 0xbb, 0x89, 0x60, 0x0e, 0x21,
+        0x11, 0xe2, 0xb4, 0x95, 0x83, 0xa8, 0x8f, 0x44, 0xdb, 0x01, 0x01, 0x00, 0x00, 0x00, 0x03, 0x00,
+        0x00, 0x00, 0x15, 0x00, 0x00, 0x00, 0x63, 0x68, 0x72, 0x69, 0x73, 0x2d, 0x6c, 0x6f, 0x63, 0x61,
+        0x6c, 0x2d, 0x6d, 0x61, 0x63, 0x68, 0x69, 0x6e, 0x65, 0x2d, 0x34, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x02, 0x1a, 0x85, 0x0a, 0x00, 0x03, 0xf4, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x15, 0x00, 0x00, 0x00, 0x63, 0x68, 0x72, 0x69, 0x73, 0x2d, 0x6c, 0x6f, 0x63,
+        0x61, 0x6c, 0x2d, 0x6d, 0x61, 0x63, 0x68, 0x69, 0x6e, 0x65, 0x2d, 0x35, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x1a, 0x85, 0x0a, 0x00, 0x03, 0x11, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x15, 0x00, 0x00, 0x00, 0x63, 0x68, 0x72, 0x69, 0x73, 0x2d, 0x6c, 0x6f,
+        0x63, 0x61, 0x6c, 0x2d, 0x6d, 0x61, 0x63, 0x68, 0x69, 0x6e, 0x65, 0x2d, 0x36, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x1a, 0x85, 0x0a, 0x00, 0x03, 0x55, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00
+    ];
+    let result = MonMap::read_from_wire(&bytes);
+    println!("MonMap: {:?}", result);
+}
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct MonMap<'a>{
@@ -1426,7 +1488,7 @@ pub struct MonMap<'a>{
     min_version: u8,
     fsid: Uuid,
     epoch: u32,
-    monitors: Vec<Monitor<'a>>,
+    monitors: Vec<Monitor<'a>>
 }
 
 impl<'a> CephPrimitive<'a> for MonMap<'a>{
@@ -1434,10 +1496,12 @@ impl<'a> CephPrimitive<'a> for MonMap<'a>{
         chain!(input,
             encoding_version: le_u8 ~
             min_version: le_u8 ~
+            num_of_monitors: le_u32 ~
             fsid: call!(parse_fsid) ~
             epoch: le_u32 ~
             num_of_monitors: le_u32 ~
-            monitors: count!(Monitor::read_from_wire, num_of_monitors as usize),
+            monitors: count!(Monitor::read_from_wire, (num_of_monitors/128) as usize), //128 == sockaddr_storage
+            //monitors: count!(EntityAddr::read_from_wire, (num_of_monitors/128) as usize),
             ||{
                 MonMap{
                     encoding_version: encoding_version,
@@ -1993,7 +2057,7 @@ pub struct CephMsgHeader {
     pub sequence_num: u64,
     pub transaction_id: u64,
     pub msg_type: CephMsgType, //u16,  //CEPH_MSG_* or MSG_*
-    pub priority: u16,
+    pub priority: CephPriority,
     pub version: u16,   //version of message encoding
     pub front_len: u32, // The size of the front section
     pub middle_len: u32,// The size of the middle section
@@ -2012,7 +2076,8 @@ impl<'a> CephPrimitive<'a> for CephMsgHeader{
             transaction_id: le_u64 ~
             msg_type_bits: le_u16 ~
             msg_type: expr_opt!(CephMsgType::from_u16(msg_type_bits)) ~
-            priority: le_u16 ~
+            priority_bits: le_u16 ~
+            priority: expr_opt!(CephPriority::from_u16(priority_bits)) ~
             version: le_u16 ~
             front_len: le_u32 ~
             middle_len: le_u32 ~
@@ -2049,7 +2114,7 @@ impl<'a> CephPrimitive<'a> for CephMsgHeader{
         try!(buffer.write_u64::<LittleEndian>(self.sequence_num));
         try!(buffer.write_u64::<LittleEndian>(self.transaction_id));
         try!(buffer.write_u16::<LittleEndian>(self.msg_type.clone() as u16));
-        try!(buffer.write_u16::<LittleEndian>(self.priority));
+        try!(buffer.write_u16::<LittleEndian>(self.priority.clone() as u16));
         try!(buffer.write_u16::<LittleEndian>(self.version));
         try!(buffer.write_u32::<LittleEndian>(self.front_len));
         try!(buffer.write_u32::<LittleEndian>(self.middle_len));
@@ -2138,6 +2203,27 @@ impl<'a> CephPrimitive<'a> for CephAuthOperation<'a>{
     }
 }
 
+#[test]
+fn test_auth_reply(){
+    let bytes = vec![
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2e, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x09, 0x00, 0x00, 0x00,
+        //TODO: This part fails
+        0x01, 0xfb, 0x82, 0x78, 0xa0, 0x16, 0xcb, 0x40, 0x5e, 0x00, 0x00, 0x00,
+        0x00
+    ];
+    let x: &[u8] = &[];
+    /*let expected_result = CephAuthOperationReply {
+        protocol: CephAuthProtocol::CephX,
+        result: 0,
+        global_id: 0x000000000000112e,
+    };*/
+    //TODO: Fails to parse string from Cephx
+    //let result = CephAuthOperationReply::read_from_wire(&bytes);
+    //println!("CephAuthOperationReply parse result: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
+}
+
 #[derive(Debug,Eq,PartialEq)]
 pub struct CephAuthOperationReply<'a> {
     protocol: CephAuthProtocol,
@@ -2175,7 +2261,22 @@ impl<'a> CephPrimitive<'a> for CephAuthOperationReply<'a>{
     }
 }
 
-#[derive(Debug)]
+#[test]
+fn test_msg_ack(){
+    let bytes = vec![
+        0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    ];
+    let x: &[u8] = &[];
+    let expected_result = CephMsgTagAck {
+        tag: CephMsg::Ack,
+        seq: 1,
+    };
+    let result = CephMsgTagAck::read_from_wire(&bytes);
+    println!("CephMsgTagAck parse result: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
+}
+
+#[derive(Debug,Eq,PartialEq)]
 struct CephMsgTagAck{
     tag: CephMsg, //0x08
     seq: u64 //Sequence number of msg being acknowledged
@@ -2251,7 +2352,25 @@ impl<'a> CephPrimitive<'a> for CephMsgKeepAlive{
     }
 }
 
-#[derive(Debug)]
+#[test]
+fn test_keep_alive2(){
+    let bytes = vec![
+        0x0e, 0x3d, 0x0c, 0x39, 0x56, 0xc8, 0xc1, 0x6e, 0x02
+    ];
+    let x: &[u8] = &[];
+    let expected_result = CephMsgKeepAlive2 {
+        tag: CephMsg::KeepAlive2,
+        timestamp: Utime {
+            tv_sec: 1446579261,
+            tv_nsec: 40813000
+        }
+    };
+    let result = CephMsgKeepAlive2::read_from_wire(&bytes);
+    println!("CephMsgKeepAlive2 parse result: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
+}
+
+#[derive(Debug,Eq,PartialEq)]
 struct CephMsgKeepAlive2{
     tag: CephMsg, //0x0E
     timestamp: Utime,
@@ -2296,7 +2415,25 @@ impl<'a> CephPrimitive<'a> for CephMsgKeepAlive2{
     }
 }
 
-#[derive(Debug)]
+#[test]
+fn test_keep_alive2_ack(){
+    let bytes = vec![
+        0x0f, 0x3d, 0x0c, 0x39, 0x56, 0xc8, 0xc1, 0x6e, 0x02
+    ];
+    let x: &[u8] = &[];
+    let expected_result = CephMsgKeepAlive2Ack {
+        tag: CephMsg::KeepAlive2Ack,
+        timestamp: Utime {
+            tv_sec: 1446579261,
+            tv_nsec: 40813000
+        }
+    };
+    let result = CephMsgKeepAlive2Ack::read_from_wire(&bytes);
+    println!("CephMsgKeepAlive2Ack parse result: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
+}
+
+#[derive(Debug,Eq,PartialEq)]
 struct CephMsgKeepAlive2Ack{
     tag: CephMsg, //0x0F
     timestamp: Utime,
@@ -2342,7 +2479,7 @@ impl<'a> CephPrimitive<'a> for CephMsgKeepAlive2Ack{
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct EntityAddr{
     pub port: u16,
     pub nonce: u32,
@@ -2352,6 +2489,7 @@ pub struct EntityAddr{
 
 impl<'a> CephPrimitive<'a> for EntityAddr{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        println!("EntityAddr");
         chain!(input,
             skip: le_u32 ~
             nonce: le_u32 ~
@@ -2429,6 +2567,24 @@ fn parse_protocol<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], CephAuthProtocol>{
             protocol
         }
     )
+}
+
+#[test]
+fn test_ipv4(){
+    let bytes = vec![
+        0x0f, 0x3d, 0x0c, 0x39, 0x56, 0xc8, 0xc1, 0x6e, 0x02
+    ];
+    let x: &[u8] = &[];
+    let expected_result = CephMsgKeepAlive2Ack {
+        tag: CephMsg::KeepAlive2Ack,
+        timestamp: Utime {
+            tv_sec: 1446579261,
+            tv_nsec: 40813000
+        }
+    };
+    let result = CephMsgKeepAlive2Ack::read_from_wire(&bytes);
+    println!("CephMsgKeepAlive2Ack parse result: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
 }
 
 fn parse_ipv4<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Ipv4Addr> {

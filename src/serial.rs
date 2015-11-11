@@ -8,9 +8,8 @@ extern crate uuid;
 //Crates
 use self::byteorder::{BigEndian, LittleEndian, WriteBytesExt};
 use self::crc::Hasher32;
-use self::nom::{le_u8, le_i16, le_u16, le_i32, le_u32, le_u64, be_u16};
+use self::nom::{GetOutput, le_u8, le_i16, le_u16, le_i32, le_u32, le_u64, be_u16};
 use self::nom::IResult::Done;
-use self::nom::GetOutput;
 use self::num::FromPrimitive;
 use self::uuid::{ParseError, Uuid};
 
@@ -1204,7 +1203,7 @@ impl<'a> CephPrimitive<'a> for Monitor<'a>{
         println!("Monitor land");
         chain!(input,
             name: parse_str ~
-            entity_addr: call!(EntityAddr::read_from_wire) ~
+            entity_addr: call!(EntityAddr::read_from_wire),
             ||{
                 Monitor{
                     name: name,
@@ -2507,19 +2506,41 @@ pub struct EntityAddr{
 impl<'a> CephPrimitive<'a> for EntityAddr{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
         println!("EntityAddr");
+
         chain!(input,
             skip: le_u32 ~
             nonce: le_u32 ~
             address_family: be_u16 ~
-            port: be_u16 ~
-            v4_addr: opt!(parse_ipv4) ~
-            v6_addr: opt!(parse_ipv6),
+            port: be_u16,
             ||{
-                EntityAddr{
-                    port: port,
-                    nonce: nonce,
-                    v4addr: v4_addr,
-                    v6addr: v6_addr,
+                match address_family{
+                    0x0002 =>{
+                        let v4_addr = parse_ipv4(input);
+                        EntityAddr{
+                            port: port,
+                            nonce: nonce,
+                            v4addr: v4_addr.output(),
+                            v6addr: None,
+                        }
+                    },
+                    0x000A =>{
+                        let v6_addr = parse_ipv6(input);
+                        EntityAddr{
+                            port: port,
+                            nonce: nonce,
+                            v4addr: None,
+                            v6addr: v6_addr.output(),
+                        }
+                    }
+                    _ => {
+                        //Default case, try ipv4?
+                        EntityAddr{
+                            port: port,
+                            nonce: nonce,
+                            v4addr: None,
+                            v6addr: None,
+                        }
+                    }
                 }
             }
         )

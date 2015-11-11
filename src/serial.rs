@@ -2519,6 +2519,7 @@ impl<'a> CephPrimitive<'a> for EntityAddr{
                         EntityAddr{
                             port: port,
                             nonce: nonce,
+                            //Match on v4_addr output
                             v4addr: v4_addr.output(),
                             v6addr: None,
                         }
@@ -2529,6 +2530,7 @@ impl<'a> CephPrimitive<'a> for EntityAddr{
                             port: port,
                             nonce: nonce,
                             v4addr: None,
+                            //Match on v6_addr output
                             v6addr: v6_addr.output(),
                         }
                     }

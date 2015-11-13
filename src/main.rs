@@ -168,7 +168,7 @@ mod tests{
             snapshot_seq: 0,
             snapshot_count: 0,
             retry_attempt: 0,
-            payload: vec![],
+            payload: &[],
         };
 
         let valid_ceph_footer = serial::CephMsgFooter{

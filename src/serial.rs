@@ -1073,6 +1073,33 @@ impl<'a> CephPrimitive<'a> for Subscription<'a>{
     }
 }
 
+#[test]
+fn test_monitor_subscribe(){
+    let bytes = vec![
+        0x02, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x6d, 0x6f, 0x6e, 0x6d, 0x61, 0x70, 0x02, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x6f, 0x73, 0x64, 0x6d, 0x61,
+        0x70, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
+    ];
+    let x: &[u8] = &[];
+    let expected_result = MonitorSubscribe{
+        subscriptions: vec![
+            Subscription{
+                name: "monmap",
+                start_time: 2,
+                flags: 0
+            },
+            Subscription{
+                name: "osdmap",
+                start_time: 0,
+                flags: 1
+            }
+        ]
+    };
+    let result = MonitorSubscribe::read_from_wire(&bytes);
+    println!("MonitorSubscribe: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
+}
+
 #[derive(Debug,Eq,PartialEq)]
 pub struct MonitorSubscribe<'a>{
     subscriptions: Vec<Subscription<'a>>,
@@ -1155,7 +1182,7 @@ pub struct PlacementGroup{
     pub group_version: u8,
     pub pool: u64,
     pub seed: u32,
-    pub preferred: u32,
+    pub preferred: i32,
 }
 
 impl<'a> CephPrimitive<'a> for PlacementGroup {
@@ -1164,7 +1191,7 @@ impl<'a> CephPrimitive<'a> for PlacementGroup {
             group_version: le_u8 ~
             pool: le_u64 ~
             seed: le_u32 ~
-            preferred: le_u32, || {
+            preferred: le_i32, || {
                 PlacementGroup {
                     group_version: group_version,
                     pool: pool,
@@ -1180,7 +1207,7 @@ impl<'a> CephPrimitive<'a> for PlacementGroup {
         try!(buffer.write_u8(self.group_version));
         try!(buffer.write_u64::<LittleEndian>(self.pool));
         try!(buffer.write_u32::<LittleEndian>(self.seed));
-        try!(buffer.write_u32::<LittleEndian>(self.preferred));
+        try!(buffer.write_i32::<LittleEndian>(self.preferred));
 
         return Ok(buffer);
     }
@@ -1190,11 +1217,6 @@ impl<'a> CephPrimitive<'a> for PlacementGroup {
 pub struct Monitor<'a>{
     name: &'a str,
     entity_addr: EntityAddr,
-    /*
-    ipv4_addr: Option<Ipv4Addr>,
-    ipv6_addr: Option<Ipv6Addr>,
-    port: u16,
-    */
 }
 
 impl<'a> CephPrimitive<'a> for Monitor<'a>{
@@ -1696,6 +1718,65 @@ impl<'a> CephPrimitive<'a> for CephOsdOperationReply<'a>{
     }
 }
 
+#[test]
+fn test_osd_operation(){
+    let bytes = vec![
+        0x00, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0xce, 0x94, 0x15, 0x56,
+        0x78, 0xeb, 0xa8, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x06, 0x03, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff,
+        0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x62, 0x1c, 0xa4, 0x5d, 0xff,
+        0xff, 0xff, 0xff, 0x08, 0x00, 0x00, 0x00, 0x6d, 0x79, 0x6f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x01,
+        0x00, 0x02, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x0d, 0x00, 0x00, 0x00, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    ];
+    let x: &[u8] = &[];
+    let expected_result = CephOsdOperation {
+        client: 0,
+        map_epoch: 9,
+        flags: CEPH_OSD_FLAG_ACK_ONDISK | CEPH_OSD_FLAG_WRITE,
+        modification_time: Utime { tv_sec: 1444254926, tv_nsec: 296283000 },
+        reassert_version: 0,
+        reassert_epoch: 0,
+        locator: ObjectLocator {
+            encoding_version: 6,
+            min_compat_version: 3,
+            size: 28,
+            pool: 0,
+            namespace_size: 0,
+            namespace_data: &[],
+        },
+        placement_group: PlacementGroup {
+            group_version: 1,
+            pool: 0,
+            seed: 1571036258,
+            preferred: 4294967295 },
+        object_id: ObjectId {
+            size: 8,
+            data: &[109, 121, 111, 98, 106, 101, 99, 116],
+        },
+        operation_count: 1,
+        operation: Operation {
+            operation: 8706, //TODO: Decode me.  ceph/src/include/rados.h Line #161
+            flags: 0, //TODO: Decode.
+            offset: 0,
+            size: 13,
+            truncate_size: 0,
+            truncate_seq: 0,
+            payload_size: 13 },
+        snapshot_id: 18446744073709551614,
+        snapshot_seq: 0,
+        snapshot_count: 0,
+        retry_attempt: 0,
+        payload: &[],
+    };
+    let result = CephOsdOperation::read_from_wire(&bytes);
+    println!("CephOsdOperation parse result: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
+}
+
 #[derive(Debug,Eq,PartialEq)]
 pub struct CephOsdOperation<'a>{
     pub client: u32,
@@ -1713,7 +1794,7 @@ pub struct CephOsdOperation<'a>{
     pub snapshot_seq: u64,
     pub snapshot_count: u32,
     pub retry_attempt: u32,
-    pub payload: Vec<u8>,
+    pub payload: &'a [u8],
 }
 
 impl<'a> CephPrimitive<'a> for CephOsdOperation<'a>{
@@ -1753,7 +1834,7 @@ impl<'a> CephPrimitive<'a> for CephOsdOperation<'a>{
                     snapshot_seq: snapshot_seq,
                     snapshot_count: snapshot_count,
                     retry_attempt: retry_attempt,
-                    payload: vec![],
+                    payload: &[],
                 }
             }
         )
@@ -1778,9 +1859,7 @@ impl<'a> CephPrimitive<'a> for CephOsdOperation<'a>{
         try!(buffer.write_u32::<LittleEndian>(self.snapshot_count));
         try!(buffer.write_u32::<LittleEndian>(self.retry_attempt));
 
-        for b in &self.payload{
-            buffer.push(b.clone());
-        }
+        buffer.extend(self.payload);
 
         return Ok(buffer);
     }

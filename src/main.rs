@@ -712,16 +712,6 @@ fn main() {
                             //The packet parsing was clean
                             Ok(header) => {
                                 dissect_msgr(header, &args, cursor.get_ref());
-                                //Try to parse some Ceph info from the packet
-                                //if let Ok(dissect_result) = dissect_msgr(header, &args, cursor.get_ref()){
-                                    //Try to send the packet off to Elasticsearch, Carbon, stdout, etc
-                                    //let args_clone = args.clone();
-                                    //let print_result = process_packet(header, &dissect_result, &args);
-                                    //debug!("Processed packet({}): {:?}",&device_name, &print_result);
-                                //}else{
-                                    //Failed to parse Ceph packet.  Ignore
-                                    //debug!("Failed to dissect ceph packet from raw packet: {:?}", cursor);
-                                //}
                             }
                             //The packet parsing failed
                             Err(_) => {

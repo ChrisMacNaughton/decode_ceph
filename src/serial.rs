@@ -48,8 +48,7 @@ mod tests{
         let my_addr = super::EntityAddr{
             port: 0,
             nonce: 100,
-            v4addr: Some(Ipv4Addr::new(192,168,1,6)),
-            v6addr: None,
+            addr: Some(super::Addr::v4addr(Ipv4Addr::new(192,168,1,6))),
         };
         let my_addr_bytes = my_addr.write_to_wire().unwrap();
         bytes_written = stream.write(&my_addr_bytes).unwrap();
@@ -2481,7 +2480,7 @@ impl<'a> CephPrimitive<'a> for CephMsgKeepAlive2Ack{
 #[test]
 fn test_entity_addr(){
     let bytes = vec![
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x1a, 0x85, 0x0a, 0x00, 0x03, 0xf4,
+        0x00, 0x00, 0x00, 0x00, 0x04, 0x81, 0x0f, 0x00, 0x00, 0x02, 0x00, 0x00, 0x0a, 0x00, 0x03, 0x01,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -2491,16 +2490,28 @@ fn test_entity_addr(){
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
     ];
+    let x: &[u8] = &[];
+    let expected_result = EntityAddr{
+        port: 0,
+        nonce: 0x000f8104,
+        addr: Some(Addr::v4addr(Ipv4Addr::new(10,0,3,1))),
+    };
     let result = EntityAddr::read_from_wire(&bytes);
     println!("EntityAddr: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub enum Addr{
+    v4addr(Ipv4Addr),
+    v6addr(Ipv6Addr),
 }
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct EntityAddr{
     pub port: u16,
     pub nonce: u32,
-    pub v4addr: Option<Ipv4Addr>,
-    pub v6addr: Option<Ipv6Addr>,
+    pub addr: Option<Addr>,
 }
 
 impl<'a> CephPrimitive<'a> for EntityAddr{
@@ -2508,41 +2519,19 @@ impl<'a> CephPrimitive<'a> for EntityAddr{
         println!("EntityAddr");
 
         chain!(input,
-            skip: le_u32 ~
+            source_node_type: le_u32 ~
             nonce: le_u32 ~
             address_family: be_u16 ~
-            port: be_u16,
+            port: be_u16 ~
+            addr: alt!(
+                call!(parse_ipv4) =>{|addr| return Some(Addr::v4addr(addr))} |
+                call!(parse_ipv6) =>{|addr| return Some(Addr::v6addr(addr))}
+            ),
             ||{
-                match address_family{
-                    0x0002 =>{
-                        let v4_addr = parse_ipv4(input);
-                        EntityAddr{
-                            port: port,
-                            nonce: nonce,
-                            //Match on v4_addr output
-                            v4addr: v4_addr.output(),
-                            v6addr: None,
-                        }
-                    },
-                    0x000A =>{
-                        let v6_addr = parse_ipv6(input);
-                        EntityAddr{
-                            port: port,
-                            nonce: nonce,
-                            v4addr: None,
-                            //Match on v6_addr output
-                            v6addr: v6_addr.output(),
-                        }
-                    }
-                    _ => {
-                        //Default case, try ipv4?
-                        EntityAddr{
-                            port: port,
-                            nonce: nonce,
-                            v4addr: None,
-                            v6addr: None,
-                        }
-                    }
+                EntityAddr{
+                    port: port,
+                    nonce: nonce,
+                    addr: addr,
                 }
             }
         )
@@ -2553,37 +2542,39 @@ impl<'a> CephPrimitive<'a> for EntityAddr{
 
         try!(buffer.write_u32::<LittleEndian>(0)); //Is this right?
         try!(buffer.write_u32::<LittleEndian>(self.nonce));
+        if let Some(ref address) = self.addr{
+            match address{
+                &Addr::v4addr(ref v4address) => {
+                    //Address Family
+                    try!(buffer.write_u16::<BigEndian>(0x0002));
+                    //Port
+                    try!(buffer.write_u16::<BigEndian>(self.port));
+                    for octet in v4address.octets().iter(){
+                        try!(buffer.write_u8(*octet));
+                    }
+                    //Sockaddr_storage seems to be a 128 byte structure and
+                    //the ceph client is sending 120 bytes of 0's or padding
+                    for _ in 0..120{
+                        try!(buffer.write_u8(0));
+                    }
+                },
+                &Addr::v6addr(ref v6address) =>{
+                    //Address Family
+                    try!(buffer.write_u32::<LittleEndian>(0x000A));
 
-        if self.v4addr.is_some(){
-            //Address Family
-            try!(buffer.write_u16::<BigEndian>(0x0002));
-            //Port
-            try!(buffer.write_u16::<BigEndian>(self.port));
-            let tmp = self.v4addr.unwrap();//TODO eliminate this
-            for octet in tmp.octets().iter(){
-                try!(buffer.write_u8(*octet));
-            }
-            //Sockaddr_storage seems to be a 128 byte structure and
-            //the ceph client is sending 120 bytes of 0's or padding
-            for _ in 0..120{
-                try!(buffer.write_u8(0));
-            }
-        }else if self.v6addr.is_some(){
-            //Address Family
-            try!(buffer.write_u32::<LittleEndian>(0x000A));
+                    //Port
+                    try!(buffer.write_u16::<BigEndian>(self.port));
 
-            //Port
-            try!(buffer.write_u16::<BigEndian>(self.port));
-
-            let tmp = self.v6addr.unwrap();//TODO eliminate this
-            for octet in tmp.segments().iter(){
-                try!(buffer.write_u16::<BigEndian>(*octet));
+                    for octet in v6address.segments().iter(){
+                        try!(buffer.write_u16::<BigEndian>(*octet));
+                    }
+                    //Sockaddr_storage seems to be a 128 byte structure and
+                    //the ceph client is sending 108 bytes of 0's or padding
+                    for _ in 0..108{
+                        try!(buffer.write_u8(0));
+                    }
+                }
             }
-        }else{
-            //Unknown
-            return Err(
-                SerialError::new("EntityAddr needs a v4addr or v6addr.  Missing both".to_string())
-            );
         }
         return Ok(buffer);
     }
@@ -2612,18 +2603,12 @@ fn parse_protocol<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], CephAuthProtocol>{
 #[test]
 fn test_ipv4(){
     let bytes = vec![
-        0x0f, 0x3d, 0x0c, 0x39, 0x56, 0xc8, 0xc1, 0x6e, 0x02
+        0x0a, 0x00, 0x03, 0x01
     ];
     let x: &[u8] = &[];
-    let expected_result = CephMsgKeepAlive2Ack {
-        tag: CephMsg::KeepAlive2Ack,
-        timestamp: Utime {
-            tv_sec: 1446579261,
-            tv_nsec: 40813000
-        }
-    };
-    let result = CephMsgKeepAlive2Ack::read_from_wire(&bytes);
-    println!("CephMsgKeepAlive2Ack parse result: {:?}", result);
+    let expected_result = Ipv4Addr::new(10,0,3,1);
+    let result = parse_ipv4(&bytes);
+    println!("Ipv4Addr parse result: {:?}", result);
     assert_eq!(Done(x, expected_result), result);
 }
 
@@ -2633,7 +2618,8 @@ fn parse_ipv4<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Ipv4Addr> {
         a: le_u8 ~
         b: le_u8 ~
         c: le_u8 ~
-        d: le_u8,
+        d: le_u8 ~
+        padding: take!(120),
         || {
             Ipv4Addr::new(a,b,c,d)
         }
@@ -2650,7 +2636,8 @@ fn parse_ipv6<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Ipv6Addr> {
         e: be_u16 ~
         f: be_u16 ~
         g: be_u16 ~
-        h: be_u16,
+        h: be_u16 ~
+        padding: take!(108),
         ||{
             Ipv6Addr::new(a,b,c,d,e,f,g,h)
         }

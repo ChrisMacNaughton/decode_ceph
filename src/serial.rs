@@ -8,7 +8,7 @@ extern crate uuid;
 //Crates
 use self::byteorder::{BigEndian, LittleEndian, WriteBytesExt};
 use self::crc::Hasher32;
-use self::nom::{GetOutput, le_u8, le_i16, le_u16, le_i32, le_u32, le_u64, be_u16};
+use self::nom::{GetOutput, le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16};
 use self::nom::IResult::Done;
 use self::num::FromPrimitive;
 use self::uuid::{ParseError, Uuid};
@@ -1130,11 +1130,37 @@ impl<'a> CephPrimitive<'a> for MonitorSubscribe<'a>{
 }
 
 #[derive(Debug,Eq,PartialEq)]
+pub struct OsdInstructions<'a>{
+    pub data: &'a [u8],
+}
+
+impl<'a> CephPrimitive<'a> for OsdInstructions<'a> {
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            data_size: le_u32 ~
+            data: take!(data_size),
+            || {
+            OsdInstructions{
+                data: data,
+            }
+        })
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+        try!(buffer.write_u32::<LittleEndian>(self.data.len() as u32));
+        buffer.extend(self.data);
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
 pub struct ObjectLocator<'a>{
     pub encoding_version: u8,
     pub min_compat_version: u8,
     pub size: u32,
-    pub pool: u64,
+    pub pool: i64,
     pub namespace_size: u32,
     pub namespace_data: &'a [u8],
 }
@@ -1145,7 +1171,7 @@ impl<'a> CephPrimitive<'a> for ObjectLocator<'a> {
             encoding_version: le_u8 ~
             min_compat_version: le_u8 ~
             size: le_u32 ~
-            pool: le_u64 ~
+            pool: le_i64 ~
             //TODO: Wireshark skips 8 bytes here.  What is this?
             skip: le_u64 ~
             namespace_size: le_u32 ~
@@ -1169,7 +1195,7 @@ impl<'a> CephPrimitive<'a> for ObjectLocator<'a> {
         try!(buffer.write_u8(self.encoding_version));
         try!(buffer.write_u8(self.min_compat_version));
         try!(buffer.write_u32::<LittleEndian>(self.size));
-        try!(buffer.write_u64::<LittleEndian>(self.pool));
+        try!(buffer.write_i64::<LittleEndian>(self.pool));
         try!(buffer.write_u32::<LittleEndian>(self.namespace_size));
         buffer.extend(self.namespace_data);
 
@@ -1650,6 +1676,110 @@ impl<'a> CephPrimitive<'a> for ReplayVersion {
 }
 
 #[derive(Debug,Eq,PartialEq)]
+pub struct CephOsdRedirect<'a>{
+    pub encoding_version: u8,
+    pub min_compat_version: u8,
+    pub size: u32,
+    pub locator: ObjectLocator<'a>,
+    //pub instructions: OsdInstructions<'a>,
+}
+
+impl<'a> CephPrimitive<'a> for CephOsdRedirect<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            encoding_version: le_u8 ~
+            min_compat_version: le_u8 ~
+            size: le_u32 ~
+            locator: call!(ObjectLocator::read_from_wire),//~
+            //instructions: call!(OsdInstructions::read_from_wire),
+            ||{
+                CephOsdRedirect{
+                    encoding_version: encoding_version,
+                    min_compat_version: min_compat_version,
+                    size: size,
+                    locator: locator,
+                    //instructions: instructions
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        try!(buffer.write_u8(self.encoding_version));
+        try!(buffer.write_u8(self.min_compat_version));
+        try!(buffer.write_u32::<LittleEndian>(self.size));
+        buffer.extend(try!(self.locator.write_to_wire()));
+        //buffer.extend(try!(self.instructions.write_to_wire()));
+
+        return Ok(buffer);
+    }
+}
+#[test]
+fn test_osd_operation_reply(){
+    let bytes = vec![
+        0x08, 0x00, 0x00, 0x00, 0x6d, 0x79, 0x6f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x01, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x62, 0x1c, 0xa4, 0x5d, 0xff, 0xff, 0xff, 0xff, 0x25, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x09, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x22, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x01, 0x2a, 0x00, 0x00, 0x00, 0x06, 0x03, 0x1c, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    ];
+    let x: &[u8] = &[0,0,0,0,0,0,0,0]; //TODO: what are we missing here?
+    let expected_result = CephOsdOperationReply {
+        object_id: ObjectId {
+            size: 8,
+            data: &[109, 121, 111, 98, 106, 101, 99, 116] },
+            placement_group: PlacementGroup {
+                group_version: 1,
+                pool: 0,
+                seed: 1571036258,
+                preferred: -1 },
+            flags: CEPH_OSD_FLAG_ACK | CEPH_OSD_FLAG_ACK_ONDISK | CEPH_OSD_FLAG_WRITE,
+            result: 0,
+            bad_replay_version: ReplayVersion {
+                version: 2, epoch: 9 },
+            osd_map_epoch: 9,
+            operation_count: 1,
+            operation: Operation {
+                operation: 8706,
+                flags: 0,
+                offset: 0,
+                size: 13,
+                truncate_size: 0,
+                truncate_seq: 0,
+                payload_size: 0 },
+            retry_attempt: 0,
+            operation_return_value: 0,
+            replay_version: ReplayVersion {
+                version: 2, epoch: 9 },
+            user_version: 2,
+            redirect: CephOsdRedirect {
+                encoding_version: 1,
+                min_compat_version: 1,
+                size: 42,
+                locator: ObjectLocator {
+                    encoding_version: 6,
+                    min_compat_version: 3,
+                    size: 28,
+                    pool: -1,
+                    namespace_size: 0,
+                    namespace_data: &[]
+                }
+            }
+         };
+    let result = CephOsdOperationReply::read_from_wire(&bytes);
+    println!("CephAuthOperationReply parse result: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
+}
+
+#[derive(Debug,Eq,PartialEq)]
 pub struct CephOsdOperationReply<'a>{
     pub object_id: ObjectId<'a>,
     pub placement_group: PlacementGroup,
@@ -1663,6 +1793,7 @@ pub struct CephOsdOperationReply<'a>{
     pub operation_return_value: u32,
     pub replay_version: ReplayVersion,
     pub user_version: u64,
+    pub redirect: CephOsdRedirect<'a>,
 }
 
 impl<'a> CephPrimitive<'a> for CephOsdOperationReply<'a>{
@@ -1672,6 +1803,7 @@ impl<'a> CephPrimitive<'a> for CephOsdOperationReply<'a>{
             placement_group: call!(PlacementGroup::read_from_wire) ~
             flags_bits: le_u32 ~
             flags: expr_opt!(OsdOp::from_bits(flags_bits)) ~
+            skip: le_u32 ~
             result: le_u32 ~
             bad_replay_version: call!(ReplayVersion::read_from_wire) ~
             osd_map_epoch: le_u32 ~
@@ -1680,7 +1812,8 @@ impl<'a> CephPrimitive<'a> for CephOsdOperationReply<'a>{
             retry_attempt: le_u32 ~
             operation_return_value: le_u32 ~
             replay_version: call!(ReplayVersion::read_from_wire) ~
-            user_version: le_u64,
+            user_version: le_u64 ~
+            redirect: call!(CephOsdRedirect::read_from_wire),
         ||{
             CephOsdOperationReply{
                 object_id: object_id,
@@ -1695,6 +1828,7 @@ impl<'a> CephPrimitive<'a> for CephOsdOperationReply<'a>{
                 operation_return_value: operation_return_value,
                 replay_version: replay_version,
                 user_version: user_version,
+                redirect: redirect,
             }
         })
     }
@@ -1713,6 +1847,7 @@ impl<'a> CephPrimitive<'a> for CephOsdOperationReply<'a>{
         try!(buffer.write_u32::<LittleEndian>(self.operation_return_value));
         buffer.extend(try!(self.replay_version.write_to_wire()));
         try!(buffer.write_u64::<LittleEndian>(self.user_version));
+        buffer.extend(try!(self.redirect.write_to_wire()));
 
         return Ok(buffer);
     }
@@ -2681,9 +2816,13 @@ fn parse_protocol<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], CephAuthProtocol>{
 
 #[test]
 fn test_ipv4(){
-    let bytes = vec![
+    let mut bytes = vec![
         0x0a, 0x00, 0x03, 0x01
     ];
+    for _ in 0..120{
+        //Filler
+        bytes.push(0);
+    }
     let x: &[u8] = &[];
     let expected_result = Ipv4Addr::new(10,0,3,1);
     let result = parse_ipv4(&bytes);

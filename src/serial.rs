@@ -714,6 +714,7 @@ enum_from_primitive!{
 #[repr(u16)]
 #[derive(Debug, Clone,Eq,PartialEq)]
 pub enum CephPriority{
+    Unknown = 63,
     Low = 64,
     Default = 127,
     High = 196,
@@ -2265,6 +2266,37 @@ impl<'a> CephPrimitive<'a> for Utime{
     }
 }
 
+#[test]
+fn test_message_header(){
+    let bytes = vec![
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x2a, 0x00, 0x3f, 0x00, 0x04, 0x00, 0x9f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x08, 0x28, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00,
+        0x00, 0x68, 0x90, 0xd0, 0x3e
+    ];
+    let x: &[u8] = &[];
+    let expected_result = CephMsgHeader {
+        sequence_num: 1,
+        transaction_id: 1,
+        msg_type: CephMsgType::MsgOsdOp,
+        priority: CephPriority::Unknown,
+        version: 4,
+        front_len: 159,
+        middle_len: 0,
+        data_len: 13,
+        data_off: 0,
+        entity_name: CephSourceName {
+            entity_type: CephEntity::Client,
+            num: 4136
+        },
+        compat_version: 3,
+        reserved: 0,
+        crc: 1053855848
+    };
+    let result = CephMsgHeader::read_from_wire(&bytes);
+    assert_eq!(Done(x, expected_result), result);
+}
+
 // From src/include/msgr.h
 #[derive(Debug,Eq,PartialEq)]
 pub struct CephMsgHeader {
@@ -2343,6 +2375,26 @@ impl<'a> CephPrimitive<'a> for CephMsgHeader{
 
         return Ok(buffer);
     }
+}
+
+#[test]
+fn test_message_footer(){
+    let bytes = vec![
+        0x1a, 0x88, 0xea, 0xbc, 0x00, 0x00, 0x00, 0x00, 0x4b, 0xbd, 0x7d, 0x33, 0xd1, 0xca, 0xd3, 0x0b,
+        0xd7, 0x54, 0x20, 0x44, 0x05
+    ];
+    let x: &[u8] = &[];
+    let expected_result = CephMsgFooter {
+        front_crc: 3169486874,
+        middle_crc: 0,
+        data_crc: 863878475,
+        crypto_sig: 4909016876426971857,
+        flags: 5
+    };
+
+    let result = CephMsgFooter::read_from_wire(&bytes);
+    println!("CephMsgFooter: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
 }
 
 #[derive(Debug,Eq,PartialEq)]

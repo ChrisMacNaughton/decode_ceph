@@ -33,6 +33,7 @@ mod tests{
     #[test]
     fn test_connect(){
         //Connect to monitor port
+        /*
         let mut stream = TcpStream::connect("10.0.3.244:6789").unwrap();
         let mut buf: Vec<u8> = Vec::new();
         //recv banner
@@ -172,6 +173,7 @@ mod tests{
 
         //  p->a : principal, principal_addr.  authenticate me!
         //bytes_written = stream.write(&auth_ticket_bytes).unwrap();
+        */
     }
 
     #[test]

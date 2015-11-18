@@ -9,6 +9,7 @@ extern crate uuid;
 use self::byteorder::{BigEndian, LittleEndian, WriteBytesExt};
 use self::crc::Hasher32;
 use self::nom::{GetOutput, le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16};
+use nom::{Consumer,ConsumerState,Move,Input};
 use self::nom::IResult::Done;
 use self::num::FromPrimitive;
 use self::uuid::{ParseError, Uuid};
@@ -431,8 +432,8 @@ impl<'a> CephPrimitive<'a> for CephMsgConnectReply{
 pub struct CephMsgrMsg<'a>{
     pub tag: CephMsg,//    u8 tag = 0x07;
     pub header: CephMsgHeader,
-    pub msg: Vec<Message<'a>>, //header + messages + footer
-    pub footer: CephMsgFooter,
+    pub msg: Result<Vec<Message<'a>>, nom::Err<&'a [u8]>>, //header + messages + footer
+    pub footer: Result<CephMsgFooter, nom::Err<&'a [u8]>>,
 }
 
 impl<'a> CephMsgrMsg<'a>{
@@ -440,8 +441,8 @@ impl<'a> CephMsgrMsg<'a>{
         return CephMsgrMsg{
             tag: CephMsg::Msg,
             header: header,
-            msg: msg,
-            footer: footer,
+            msg: Ok(msg),
+            footer: Ok(footer),
         }
     }
 }
@@ -452,22 +453,18 @@ impl<'a> CephPrimitive<'a> for CephMsgrMsg<'a>{
             tag_bits: le_u8 ~
             tag: expr_opt!(CephMsg::from_u8(tag_bits)) ~
             header: call!(CephMsgHeader::read_from_wire) ~
-            //messages: call!(read_messages_from_wire(input, &header.msg_type)) ~
-            footer: call!(CephMsgFooter::read_from_wire),
+            //Sometimes we get a packet that is too small from PCAP and we can't parse these
+            //messages: opt_res!(read_messages_from_wire(input, &header.msg_type)) ~
+            footer: opt_res!(CephMsgFooter::read_from_wire),
             ||{
                 CephMsgrMsg{
                     tag: tag,
                     header: header,
-                    msg: vec![],//messages,
+                    msg: Ok(vec![]),
+                    //Skip the footer
                     footer: footer,
                 }
             })
-        /*
-        //Skip the footer for now
-        //If we had control of the TCP Socket than sure we could keep reading and get the footer
-        //but for pcap packets we don't have the full packet so this becomes a problem.
-        //let footer = try!(CephMsgFooter::read_from_wire(cursor));
-        */
     }
 
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
@@ -479,15 +476,20 @@ impl<'a> CephPrimitive<'a> for CephMsgrMsg<'a>{
             try!(buffer.write_u8(b.clone()));
         }
         //Encode Message
-        for msg in self.msg.iter(){
-            let bits = try!(write_message_to_wire(msg));
-            buffer.extend(bits);
+        if self.msg.is_ok(){
+            let messages = self.msg.as_ref().unwrap();
+            for msg in messages.iter(){
+                let bits = try!(write_message_to_wire(msg));
+                buffer.extend(bits);
+            }
         }
+        if self.footer.is_ok(){
+            let footer = self.footer.as_ref().unwrap();
+            let footer_bits = try!(footer.write_to_wire());
 
-        let footer_bits = try!(self.footer.write_to_wire());
-
-        for b in footer_bits{
-            try!(buffer.write_u8(b.clone()));
+            for b in footer_bits{
+                try!(buffer.write_u8(b.clone()));
+            }
         }
 
         return Ok(buffer);

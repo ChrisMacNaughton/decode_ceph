@@ -8,8 +8,7 @@ extern crate uuid;
 //Crates
 use self::byteorder::{BigEndian, LittleEndian, WriteBytesExt};
 use self::crc::Hasher32;
-use self::nom::{GetOutput, le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16};
-use nom::{Consumer,ConsumerState,Move,Input};
+use self::nom::{le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16};
 use self::nom::IResult::Done;
 use self::num::FromPrimitive;
 use self::uuid::{ParseError, Uuid};
@@ -26,7 +25,6 @@ use std::string::FromUtf8Error;
 mod tests{
     use std::io::Cursor;
     use std::io::prelude::*;
-    use std::net::{Ipv4Addr,TcpStream};
     use super::CephPrimitive;
     use crypto;
 
@@ -432,16 +430,16 @@ impl<'a> CephPrimitive<'a> for CephMsgConnectReply{
 pub struct CephMsgrMsg<'a>{
     pub tag: CephMsg,//    u8 tag = 0x07;
     pub header: CephMsgHeader,
-    pub msg: Result<Vec<Message<'a>>, nom::Err<&'a [u8]>>, //header + messages + footer
+    pub messages: Vec<Message<'a>>, //header + messages + footer
     pub footer: Result<CephMsgFooter, nom::Err<&'a [u8]>>,
 }
 
 impl<'a> CephMsgrMsg<'a>{
-    fn new(header: CephMsgHeader, msg: Vec<Message>, footer: CephMsgFooter)->CephMsgrMsg{
+    fn new(header: CephMsgHeader, messages: Vec<Message>, footer: CephMsgFooter)->CephMsgrMsg{
         return CephMsgrMsg{
             tag: CephMsg::Msg,
             header: header,
-            msg: Ok(msg),
+            messages: messages,
             footer: Ok(footer),
         }
     }
@@ -454,14 +452,13 @@ impl<'a> CephPrimitive<'a> for CephMsgrMsg<'a>{
             tag: expr_opt!(CephMsg::from_u8(tag_bits)) ~
             header: call!(CephMsgHeader::read_from_wire) ~
             //Sometimes we get a packet that is too small from PCAP and we can't parse these
-            //messages: opt_res!(read_messages_from_wire(input, &header.msg_type)) ~
+            messages: call!(read_messages_from_wire, &header.msg_type) ~
             footer: opt_res!(CephMsgFooter::read_from_wire),
             ||{
                 CephMsgrMsg{
                     tag: tag,
                     header: header,
-                    msg: Ok(vec![]),
-                    //Skip the footer
+                    messages: messages,
                     footer: footer,
                 }
             })
@@ -476,12 +473,9 @@ impl<'a> CephPrimitive<'a> for CephMsgrMsg<'a>{
             try!(buffer.write_u8(b.clone()));
         }
         //Encode Message
-        if self.msg.is_ok(){
-            let messages = self.msg.as_ref().unwrap();
-            for msg in messages.iter(){
-                let bits = try!(write_message_to_wire(msg));
-                buffer.extend(bits);
-            }
+        for msg in self.messages.iter(){
+            let bits = try!(write_message_to_wire(msg));
+            buffer.extend(bits);
         }
         if self.footer.is_ok(){
             let footer = self.footer.as_ref().unwrap();
@@ -1910,7 +1904,7 @@ fn test_osd_operation(){
         snapshot_seq: 0,
         snapshot_count: 0,
         retry_attempt: 0,
-        payload: &[],
+        payload: None,
     };
     let result = CephOsdOperation::read_from_wire(&bytes);
     println!("CephOsdOperation parse result: {:?}", result);
@@ -1934,7 +1928,7 @@ pub struct CephOsdOperation<'a>{
     pub snapshot_seq: u64,
     pub snapshot_count: u32,
     pub retry_attempt: u32,
-    pub payload: &'a [u8],
+    pub payload: Option<&'a [u8]>,
 }
 
 impl<'a> CephPrimitive<'a> for CephOsdOperation<'a>{
@@ -1955,8 +1949,8 @@ impl<'a> CephPrimitive<'a> for CephOsdOperation<'a>{
             snapshot_id: le_u64 ~
             snapshot_seq: le_u64 ~
             snapshot_count: le_u32 ~
-            retry_attempt: le_u32,
-            //payload: call!(vec![]),
+            retry_attempt: le_u32 ~
+            payload: opt!(take!(operation.size)),
             ||{
                 CephOsdOperation{
                     client: client,
@@ -1974,7 +1968,7 @@ impl<'a> CephPrimitive<'a> for CephOsdOperation<'a>{
                     snapshot_seq: snapshot_seq,
                     snapshot_count: snapshot_count,
                     retry_attempt: retry_attempt,
-                    payload: &[],
+                    payload: payload,//&[],
                 }
             }
         )
@@ -1999,7 +1993,9 @@ impl<'a> CephPrimitive<'a> for CephOsdOperation<'a>{
         try!(buffer.write_u32::<LittleEndian>(self.snapshot_count));
         try!(buffer.write_u32::<LittleEndian>(self.retry_attempt));
 
-        buffer.extend(self.payload);
+        if self.payload.is_some(){
+            buffer.extend(self.payload.unwrap());
+        }
 
         return Ok(buffer);
     }
@@ -2524,6 +2520,13 @@ impl<'a> CephPrimitive<'a> for CephAuthOperationReply<'a>{
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
+        try!(buffer.write_u32::<LittleEndian>(self.protocol.clone() as u32));
+        try!(buffer.write_i32::<LittleEndian>(self.result));
+        try!(buffer.write_u64::<LittleEndian>(self.global_id));
+        try!(buffer.write_u32::<LittleEndian>(self.result_msg.len() as u32));
+        buffer.extend(self.result_msg.as_bytes());
+        try!(buffer.write_u32::<LittleEndian>(self.result_buffer.len() as u32));
+        buffer.extend(self.result_buffer);
 
         return Ok(buffer);
     }
@@ -2764,7 +2767,7 @@ fn test_entity_addr(){
     let expected_result = EntityAddr{
         port: 0,
         nonce: 0x000f8104,
-        addr: Some(Addr::v4addr(Ipv4Addr::new(10,0,3,1))),
+        addr: Some(Addr::V4addr(Ipv4Addr::new(10,0,3,1))),
     };
     let result = EntityAddr::read_from_wire(&bytes);
     println!("EntityAddr: {:?}", result);
@@ -2773,8 +2776,8 @@ fn test_entity_addr(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub enum Addr{
-    v4addr(Ipv4Addr),
-    v6addr(Ipv6Addr),
+    V4addr(Ipv4Addr),
+    V6addr(Ipv6Addr),
 }
 
 #[derive(Debug,Eq,PartialEq)]
@@ -2786,16 +2789,14 @@ pub struct EntityAddr{
 
 impl<'a> CephPrimitive<'a> for EntityAddr{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
-        println!("EntityAddr");
-
         chain!(input,
             source_node_type: le_u32 ~
             nonce: le_u32 ~
             address_family: be_u16 ~
             port: be_u16 ~
             addr: alt!(
-                call!(parse_ipv4) =>{|addr| return Some(Addr::v4addr(addr))} |
-                call!(parse_ipv6) =>{|addr| return Some(Addr::v6addr(addr))}
+                call!(parse_ipv4) =>{|addr| return Some(Addr::V4addr(addr))} |
+                call!(parse_ipv6) =>{|addr| return Some(Addr::V6addr(addr))}
             ),
             ||{
                 EntityAddr{
@@ -2814,7 +2815,7 @@ impl<'a> CephPrimitive<'a> for EntityAddr{
         try!(buffer.write_u32::<LittleEndian>(self.nonce));
         if let Some(ref address) = self.addr{
             match address{
-                &Addr::v4addr(ref v4address) => {
+                &Addr::V4addr(ref v4address) => {
                     //Address Family
                     try!(buffer.write_u16::<BigEndian>(0x0002));
                     //Port
@@ -2828,7 +2829,7 @@ impl<'a> CephPrimitive<'a> for EntityAddr{
                         try!(buffer.write_u8(0));
                     }
                 },
-                &Addr::v6addr(ref v6address) =>{
+                &Addr::V6addr(ref v6address) =>{
                     //Address Family
                     try!(buffer.write_u32::<LittleEndian>(0x000A));
 

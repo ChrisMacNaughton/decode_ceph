@@ -30,7 +30,6 @@ use influent::create_client;
 use influent::client::Client;
 use influent::client::Credentials;
 use influent::measurement::{Measurement, Value};
-use nom::MemProducer;
 use output_args::*;
 
 #[cfg(test)]
@@ -41,7 +40,7 @@ mod tests{
     use std::io::Cursor;
     use std::net::Ipv4Addr;
     use std::path::Path;
-    use pcap::{Capture, Device};
+    use pcap::{Capture};
     use log;
     use output_args::*;
     use super::serial;
@@ -146,7 +145,7 @@ mod tests{
             snapshot_seq: 0,
             snapshot_count: 0,
             retry_attempt: 0,
-            payload: &[],
+            payload: Some(&[]),
         };
 
         let valid_ceph_footer = serial::CephMsgFooter{
@@ -161,9 +160,7 @@ mod tests{
         let position = cursor.position() as usize;
         let result = super::dissect_msgr(packet_header, &args, &cursor.get_ref()[position..]);
         println!("Result: {:?}", result);
-        //assert_eq!(result.header, valid_ceph_header);
-        //assert_eq!(result.msg, serial::Message::OsdOp(valid_ceph_osd_op));
-        //assert_eq!(result.footer, valid_ceph_footer);
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -437,8 +434,7 @@ fn parse_carbon_url(url: &String)->Result<(String, u16), String>{
 
 fn log_msg_to_carbon(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     if output_args.carbon.is_some(){
-        for ceph_msg in msg.msg.as_ref().unwrap(){
-
+        for ceph_msg in &msg.messages{
             let op = match *ceph_msg {
                 serial::Message::OsdOp(ref osd_op) => osd_op,
                 serial::Message::OsdSubop(ref sub_op) => sub_op,
@@ -470,7 +466,7 @@ fn log_msg_to_carbon(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
 
 fn log_msg_to_elasticsearch(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     if output_args.elasticsearch.is_some() && output_args.outputs.contains(&"elasticsearch".to_string()){
-        for ceph_msg in msg.msg.as_ref().unwrap(){
+        for ceph_msg in &msg.messages{
             let op = match *ceph_msg {
                 serial::Message::OsdOp(ref osd_op) => osd_op,
                 serial::Message::OsdSubop(ref sub_op) => sub_op,
@@ -495,7 +491,7 @@ fn log_msg_to_elasticsearch(header: &PacketHeader, msg: &serial::CephMsgrMsg, ou
 
 fn log_msg_to_stdout(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     if output_args.stdout.is_some(){
-        for ceph_msg in msg.msg.as_ref().unwrap(){
+        for ceph_msg in &msg.messages{
             let op = match *ceph_msg {
                 serial::Message::OsdOp(ref osd_op) => osd_op,
                 serial::Message::OsdSubop(ref sub_op) => sub_op,
@@ -517,7 +513,7 @@ fn log_msg_to_stdout(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
 
 fn log_msg_to_influx(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     if output_args.influx.is_some() && output_args.outputs.contains(&"influx".to_string()) {
-        for ceph_msg in msg.msg.as_ref().unwrap(){
+        for ceph_msg in &msg.messages{
             let op = match *ceph_msg {
                 serial::Message::OsdOp(ref osd_op) => osd_op,
                 serial::Message::OsdSubop(ref sub_op) => sub_op,

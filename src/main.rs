@@ -18,7 +18,6 @@ use serial::{CephPrimitive};
 mod crypto;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use log::LogLevel;
 use pcap::{Capture, Device};
 
 use std::io::Cursor;
@@ -530,8 +529,6 @@ fn log_msg_to_influx(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
             let hosts = vec![host.as_ref()];
             let client = create_client(credentials, hosts);
 
-
-
             let src_addr: String = match header.src_v4addr{
                 Some(addr) => addr.to_string(),
                 None => {
@@ -555,6 +552,14 @@ fn log_msg_to_influx(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
             let count = op.operation_count as i64;
             let flags: String = format!("{:?}", op.flags).clone();
             let mut measurement = Measurement::new("ceph");
+
+            if op.flags.contains(serial::CEPH_OSD_FLAG_WRITE) {
+                measurement.add_tag("type", "write");
+            } else if op.flags.contains(serial::CEPH_OSD_FLAG_READ) {
+                measurement.add_tag("type", "read");
+            } else {
+                trace!("{:?} doesn't contain {:?}", op.flags, vec![serial::CEPH_OSD_FLAG_WRITE, serial::CEPH_OSD_FLAG_READ]);
+            }
             measurement.add_tag("src_address", src_addr.as_ref());
             measurement.add_tag("dst_address", dst_addr.as_ref());
             measurement.add_field("size", Value::Float(size));
@@ -602,8 +607,9 @@ fn dissect_msgr<'a>(header: PacketHeader, output_args: &Args, input: &'a [u8])->
 }
 
 fn main() {
+    let args = get_arguments();
     //TODO make configurable via cli or config arg
-    simple_logger::init_with_level(LogLevel::Info).unwrap();
+    simple_logger::init_with_level(args.log_level).unwrap();
 
     match check_user(){
         Ok(_) => {},
@@ -611,7 +617,7 @@ fn main() {
             return;
         }
     };
-    let args = get_arguments();
+
     for output in &args.outputs {
         info!("Logging to {}", output);
     }

@@ -17,7 +17,6 @@ use serial::{CephPrimitive};
 mod crypto;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use log::LogLevel;
 use pcap::{Capture, Device};
 
 use std::io::Cursor;
@@ -588,8 +587,9 @@ fn dissect_msgr<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<serial::CephMsgrMsg, 
 }
 
 fn main() {
+    let args = get_arguments();
     //TODO make configurable via cli or config arg
-    simple_logger::init_with_level(LogLevel::Info).unwrap();
+    simple_logger::init_with_level(args.log_level).unwrap();
 
     match check_user(){
         Ok(_) => {},
@@ -597,7 +597,7 @@ fn main() {
             return;
         }
     };
-    let args = get_arguments();
+    
     for output in &args.outputs {
         info!("Logging to {}", output);
     }
@@ -677,7 +677,7 @@ fn main() {
                                     debug!("Processed packet({}): {:?}",&device_name, &print_result);
                                 }else{
                                     //Failed to parse Ceph packet.  Ignore
-                                    //debug!("Failed to dissect ceph packet from raw packet: {:?}", cursor);
+                                    trace!("Failed to dissect ceph packet from raw packet: {:?}", cursor);
                                 }
                             }
                             //The packet parsing failed

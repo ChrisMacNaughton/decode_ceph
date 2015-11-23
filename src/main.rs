@@ -330,6 +330,7 @@ fn read_v6ip<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<Ipv6Addr, serial::Serial
 }
 
 //Takes a cursor to a byte array and parses ip info from it
+//TODO: Rewrite in nom!
 fn parse_etherframe<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<PacketHeader, serial::SerialError>{
     let ethertype = try!(cursor.read_u16::<BigEndian>());
 

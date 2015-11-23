@@ -7,7 +7,7 @@ extern crate uuid;
 
 //Crates
 use self::byteorder::{BigEndian, LittleEndian, WriteBytesExt};
-use self::crc::Hasher32;
+use self::crc::{crc32, Hasher32};
 use self::nom::{le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16};
 use self::nom::IResult::Done;
 use self::num::FromPrimitive;
@@ -467,23 +467,31 @@ impl<'a> CephPrimitive<'a> for CephMsgrMsg<'a>{
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
         try!(buffer.write_u8(self.tag.clone() as u8));
+        buffer.extend(try!(self.header.write_to_wire()));
 
-        let header_bits = try!(self.header.write_to_wire());
-        for b in header_bits{
-            try!(buffer.write_u8(b.clone()));
-        }
         //Encode Message
-        for msg in self.messages.iter(){
-            let bits = try!(write_message_to_wire(msg));
-            buffer.extend(bits);
-        }
-        if self.footer.is_ok(){
-            let footer = self.footer.as_ref().unwrap();
-            let footer_bits = try!(footer.write_to_wire());
+        let mut msg_buffer: Vec<u8> = Vec::new();
+        let mut data_crc: u32 = 0;
 
-            for b in footer_bits{
-                try!(buffer.write_u8(b.clone()));
+        for msg in self.messages.iter(){
+            match msg{
+                Message::OsdOp(ref osd_op)=>{
+                    //Create the OSD data crc32
+
+                }
+                _ =>{
+                    msg_buffer.extend(try!(write_message_to_wire(msg)));
+                }
             }
+        }
+        let front_crc = ceph_crc32(&msg_buffer[..]);
+
+        if self.footer.is_ok(){
+            //Clone the footer and set the crc's
+            let mut footer = self.footer.clone().unwrap();
+            footer.front_crc = front_crc;
+            footer.data_crc = data_crc;
+            buffer.extend(try!(footer.write_to_wire()));
         }
 
         return Ok(buffer);
@@ -2310,7 +2318,7 @@ pub struct CephMsgHeader {
     pub entity_name: CephSourceName, // Information about the sender
     pub compat_version: u16, // Oldest compatible encoding version
     pub reserved: u16, // Unused
-    pub crc: u32,  // CRC of header
+    pub crc: u32,  // CRC of header.  All bytes minus the crc32 itself.
 }
 
 impl<'a> CephPrimitive<'a> for CephMsgHeader{
@@ -2352,8 +2360,6 @@ impl<'a> CephPrimitive<'a> for CephMsgHeader{
     }
 
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-        // let mut digest = crc32::Digest::new(crc32::CASTAGNOLI);
-
         let mut buffer:Vec<u8> = Vec::new();
         try!(buffer.write_u64::<LittleEndian>(self.sequence_num));
         try!(buffer.write_u64::<LittleEndian>(self.transaction_id));
@@ -2369,7 +2375,10 @@ impl<'a> CephPrimitive<'a> for CephMsgHeader{
 
         try!(buffer.write_u16::<LittleEndian>(self.compat_version));
         try!(buffer.write_u16::<LittleEndian>(self.reserved));
-        try!(buffer.write_u32::<LittleEndian>(self.crc));
+
+        //Checksum and send it off to Ceph!
+        let buffer_crc = ceph_crc32(&buffer[..]);
+        try!(buffer.write_u32::<LittleEndian>(buffer_crc));
 
         return Ok(buffer);
     }
@@ -2395,11 +2404,11 @@ fn test_message_footer(){
     assert_eq!(Done(x, expected_result), result);
 }
 
-#[derive(Debug,Eq,PartialEq)]
+#[derive(Clone,Debug,Eq,PartialEq)]
 pub struct CephMsgFooter {
-    pub front_crc: u32,
-    pub middle_crc: u32,
-    pub data_crc: u32,
+    pub front_crc: u32, //This is the Ceph Msg crc ie the msg between the header and footer
+    pub middle_crc: u32, //What is this for?
+    pub data_crc: u32, //This is set during OSD op's and is the checksum of the data.
     pub crypto_sig: u64,
     pub flags: u8
 }
@@ -2940,6 +2949,13 @@ fn parse_str<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], &'a str> {
     )
 }
 
+fn ceph_crc32(input: &[u8]) -> u32 {
+    let mut digest = crc32::Digest::new_with_initial(crc32::CASTAGNOLI, 0xFFFFFFFF);
+    digest.write(input);
+    let pre_digest = digest.sum32();
+    return pre_digest ^ 0xFFFFFFFF;
+}
+
 //Connect to Ceph Monitor and send a hello banner
 fn send_banner(socket: &mut TcpStream)->Result<usize, SerialError>{
     let banner = String::from("ceph v027");
@@ -2960,8 +2976,3 @@ fn send_msg(socket: &mut TcpStream, msg: Message)->Result<usize, SerialError>{
         return Ok(written_bytes);
     }
 }
-
-//TODO: What should this do?
-// fn recv_msg(socket: &mut TcpStream){
-
-// }

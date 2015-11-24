@@ -474,10 +474,13 @@ impl<'a> CephPrimitive<'a> for CephMsgrMsg<'a>{
         let mut data_crc: u32 = 0;
 
         for msg in self.messages.iter(){
-            match msg{
+            match *msg{
                 Message::OsdOp(ref osd_op)=>{
                     //Create the OSD data crc32
-
+                    if let Some(payload) = osd_op.payload{
+                        data_crc = ceph_crc32(&payload[..]);
+                    }
+                    msg_buffer.extend(try!(write_message_to_wire(msg)));
                 }
                 _ =>{
                     msg_buffer.extend(try!(write_message_to_wire(msg)));

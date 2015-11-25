@@ -173,7 +173,7 @@ mod tests{
             log_level: log::LogLevel::Info
         };
         //Set the cursor so the parsing doesn't fail
-        let mut cap = Capture::from_file(Path::new("/home/chris/data.pcap")).unwrap();//ceph.pcap")).unwrap();
+        let mut cap = Capture::from_file(Path::new("ceph.pcap")).unwrap();
         while let Some(packet) = cap.next() {
             //We received a packet
             let data = packet.data;

@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #[macro_use] extern crate enum_primitive;
 #[macro_use] extern crate bitflags;
+#[macro_use] extern crate nom;
 #[macro_use] extern crate log;
 extern crate byteorder;
 extern crate ease;
@@ -45,71 +46,47 @@ mod tests{
 
     #[test]
     fn test_packet_parsing(){
+        let args = output_args::Args {
+            carbon: None,
+            elasticsearch: None,
+            stdout: Some("stdout".to_string()),
+            influx: None,
+            outputs: vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()],
+            config_path: "".to_string(),
+            log_level: log::LogLevel::Info
+        };
         let mut v4_packet2: Vec<u8> = vec![
-            0x00 ,0x16 ,0x3e ,0x4c ,0x7b ,0xa0 , //Dst MAC
-            0x00 ,0x16 ,0x3e ,0x53 ,0x4e ,0xf2 , //Src MAC
-            0x08 ,0x00, //IP TYPE 14
-            0x45 ,0x00 ,0x01 ,0x24 ,0x52 ,0xf6 ,0x40 ,0x00 ,0x40 ,0x06 ,0xcb ,0xeb , //26
-            0x0a ,0x00, 0x03, 0x63 , //SRC IP //30
-            0x0a ,0x00 ,0x03 ,0x90 , //DST IP //34
-            0xea ,0x6d , //SRC port //36
-            0x1a ,0x90 , //DST port //38
-            0x38 ,0xdc ,0xc2 ,0x31 , //42
-            0x66 ,0xd4 ,0x41 ,0xae , //46
-            0x80 ,0x18 ,0x00 ,0xf5 , //50
-            0x1c ,0x09 ,0x00 ,0x00 , //54
-            0x01 ,0x01 ,0x08 ,0x0a,  //58
-            0x00 ,0x05 ,0x24 ,0x07 , //62
-            0x00 ,0x05 ,0x14 ,0x27 , //66
-            0x07 ,0x02 ,0x00 ,0x00 , //70
-            0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x03 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x2a , //84
-            0x00 ,0x3f ,0x00, 0x04 ,0x00 ,0x99 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x0c , //98
-            0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x08 ,0x9a ,0x11 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 , //112
-            0x03 ,0x00 ,0x00 ,0x00, 0x54 ,0x3b ,0x7e ,0x6a ,
-
-            0x00 ,0x00 ,0x00 ,0x00 ,0x5a ,0x00 , //CephOsdOperation 126
-            0x00 ,0x00 ,0x24 ,0x00 ,0x00 ,0x00 ,0x14 ,0x7e ,0xf3 ,0x55 ,0xf0 ,0x88 ,0x81 ,0x32 , //140
-            0x00 ,
-
-            0x00 ,0x00 ,0x00 ,0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x03, 0x1c, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x8f, 0x8d, 0x49, 0x97, 0xff, 0xff,
-            0xff, 0xff, 0x02, 0x00, 0x00, 0x00, 0x68, 0x77, 0x01, 0x00, 0x02, 0x22, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x57, 0x6f, 0x72, 0x6c, 0x64, 0x21,
-            0xed, 0x70, 0x12, 0xf6, 0x00, 0x00, 0x00, 0x00, 0x81, 0x44, 0x0c, 0xd5, 0x01, 0xe1,
-            0xac, 0x17, 0x8e, 0x5a, 0xd0, 0x6c, 0x05];
-
-        let mut v4_packet: Vec<u8> = vec![
-            0, 22, 62, 76, 123, 160, //Dst Mac
-            0, 22, 62, 83, 78, 242, //Src mac
-            8, 0, //Ethertype
-            69, 0, //IP header Packet
-            0, 235, 160, 122, 64, 0, 64, 6,
-            251, 204,//New position
-            10, 0, 3, 99, //src ip
-            10, 0, 3, 144, //dst ip
-            173, 186, 26, 133, 86, 2, 236, 160, 131, 235, 201, 242, 128, 24, 11, 227, 27,
-            208, 0, 0, 1, 1, 8, 10, 4, 202, 237, 131, 4, 202, 237, 87, 7, 67, 255, 1, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 6, 196, 0, 1, 0, 108, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 232, 89, 107, 135, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 3, 1, 82, 0, 0, 0, 0, 176, 158, 40
+            0x00, 0x16, 0x3e, 0xf5, 0x8e, 0xa6, 0x00, 0x16, 0x3e, 0x39, 0x19, 0x29, 0x08, 0x00, 0x45, 0x00,
+            0x01, 0x2b, 0x9a, 0xdd, 0x40, 0x00, 0x40, 0x06, 0x83, 0x5b, 0x0a, 0x00, 0x03, 0xf9, 0x0a, 0x00,
+            0x03, 0x9c, 0xb2, 0xa4, 0x1a, 0x90, 0x7b, 0xfa, 0xe7, 0xef, 0xd4, 0xee, 0x3c, 0xac, 0x80, 0x18,
+            0x00, 0xed, 0x1c, 0xb2, 0x00, 0x00, 0x01, 0x01, 0x08, 0x0a, 0x00, 0x06, 0x7c, 0x58, 0x00, 0x06,
+            0x7c, 0x58, 0x07, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x2a, 0x00, 0x3f, 0x00, 0x04, 0x00, 0x9f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x28, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x03, 0x00, 0x00, 0x00, 0x68, 0x90, 0xd0, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00,
+            0x24, 0x00, 0x00, 0x00, 0xd6, 0x94, 0x15, 0x56, 0x70, 0xfa, 0x36, 0x09, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x03, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x62, 0x1c, 0xa4, 0x5d, 0xff, 0xff, 0xff, 0xff, 0x08, 0x00, 0x00, 0x00, 0x6d,
+            0x79, 0x6f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x01, 0x00, 0x02, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d, 0x00, 0x00, 0x00, 0xfe,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x77, 0x6f, 0x72,
+            0x6c, 0x64, 0x20, 0x0a, 0x1a, 0x88, 0xea, 0xbc, 0x00, 0x00, 0x00, 0x00, 0x4b, 0xbd, 0x7d, 0x33,
+            0xd1, 0xca, 0xd3, 0x0b, 0xd7, 0x54, 0x20, 0x44, 0x05
         ];
         let mut cursor = Cursor::new(&v4_packet2[..]);
         cursor.set_position(12);
-        let packer_header = super::parse_etherframe(&mut cursor).unwrap();
+        let packet_header = super::parse_etherframe(&mut cursor).unwrap();
 
         //Validate the header parsing results
         let valid_header = super::PacketHeader{
-            src_port: 60013,
+            src_port: 45732,
             dst_port: 6800,
-            src_v4addr: Some(Ipv4Addr::new(10,0,3,99)),
-            dst_v4addr: Some(Ipv4Addr::new(10,0,3,144)),
+            src_v4addr: Some(Ipv4Addr::new(10,0,3,249)),
+            dst_v4addr: Some(Ipv4Addr::new(10,0,3,156)),
             src_v6addr: None,
             dst_v6addr: None,
         };
@@ -117,13 +94,13 @@ mod tests{
             sequence_num: 2,
             transaction_id: 3,
             msg_type: serial::CephMsgType::MsgOsdOp,
-            priority: 63,
+            priority: serial::CephPriority::Default, //63,
             version: 4,
             front_len: 153,
             middle_len: 0,// The size of the middle section
             data_len: 12,
             data_off: 0,  // The way data should be aligned by the reciever
-            entity_name: serial::CephEntityName{
+            entity_name: serial::CephSourceName{
                 entity_type: serial::CephEntity::Client,
                 num: 4506,
             },
@@ -131,6 +108,8 @@ mod tests{
             reserved: 0,
             crc: 1786657620,
         };
+        let object_id_data = vec![104, 119];
+        let namespace_data = vec![];
 
         let valid_ceph_osd_op = serial::CephOsdOperation{
             client: 0,
@@ -138,16 +117,33 @@ mod tests{
             flags: serial::OsdOp::from_bits(0x0004| 0x0020).unwrap(),
             modification_time: serial::Utime { tv_sec: 1442020884, tv_nsec: 847350000 },
             reassert_version: 0, reassert_epoch: 0,
-            locator: serial::ObjectLocator { encoding_version: 6, min_compat_version: 3, size: 28, pool: 0, namespace_size: 0, namespace_data: vec![] },
-            placement_group: serial::PlacementGroup { group_version: 1, pool: 0, seed: 2538179983, preferred: 4294967295 },
-            object_id: serial::ObjectId { size: 2, data: vec![104, 119] },
+            locator: serial::ObjectLocator {
+                encoding_version: 6,
+                min_compat_version: 3,
+                size: 28,
+                pool: 0,
+                namespace_size: 0,
+                namespace_data: &namespace_data},
+            placement_group: serial::PlacementGroup {
+                group_version: 1,
+                pool: 0,
+                seed: 2538179983,
+                preferred: 4294967295 },
+            object_id: serial::ObjectId { size: 2, data: &object_id_data},
             operation_count: 1,
-            operation: serial::Operation { operation: 8706, flags: 0, offset: 0, size: 12, truncate_size: 0, truncate_seq: 0, payload_size: 12 },
+            operation: serial::Operation {
+                operation: 8706,
+                flags: 0,
+                offset: 0,
+                size: 12,
+                truncate_size: 0,
+                truncate_seq: 0,
+                payload_size: 12 },
             snapshot_id: 18446744073709551614,
             snapshot_seq: 0,
             snapshot_count: 0,
             retry_attempt: 0,
-            payload: vec![],
+            payload: Some(&[]),
         };
 
         let valid_ceph_footer = serial::CephMsgFooter{
@@ -158,13 +154,11 @@ mod tests{
             flags: 0,
         };
 
-        assert_eq!(packer_header, valid_header);
-
-        let result = super::dissect_msgr(&mut cursor).unwrap();
+        assert_eq!(packet_header, valid_header);
+        let position = cursor.position() as usize;
+        let result = super::dissect_msgr(packet_header, &args, &cursor.get_ref()[position..]);
         println!("Result: {:?}", result);
-        assert_eq!(result.header, valid_ceph_header);
-        assert_eq!(result.msg, serial::Message::OsdOp(valid_ceph_osd_op));
-        assert_eq!(result.footer, valid_ceph_footer);
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -191,13 +185,10 @@ mod tests{
                 //The packet parsing was clean
                 Ok(header) => {
                     //Try to parse some Ceph info from the packet
-                    if let Ok(dissect_result) = super::dissect_msgr(&mut cursor){
-                        let print_result = super::process_packet(header, dissect_result, &args);
-                        //println!("Processed packet: {:?}", &print_result);
-                    }else{
-                        //Failed to parse Ceph packet.  Ignore
-                        //println!("Failed to dissect ceph packet from raw packet: {:?}", cursor);
-                    }
+                    let position = cursor.position() as usize;
+                    let result = super::dissect_msgr(header, &args, &cursor.get_ref()[position..]);
+                    //let print_result = super::process_packet(header, &dissect_result, &args);
+                    println!("Processed packet: {:?}", result);
                 }
                 //The packet parsing failed
                 Err(err) => {
@@ -215,7 +206,7 @@ struct Document<'a>{
     flags: serial::OsdOp,
     operation_count: u16,
     //placement_group: serial::PlacementGroup,
-    size: u64,
+    size: u32,
     timestamp: u64, //Milliseconds since epoch
 }
 
@@ -444,9 +435,9 @@ fn parse_carbon_url(url: &String)->Result<(String, u16), String>{
     }
 }
 
-fn log_msg_to_carbon(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
+fn log_msg_to_carbon(header: &PacketHeader, msg: &serial::Message, output_args: &Args)->Result<(),String>{
     if output_args.carbon.is_some(){
-        let op = match msg.msg {
+        let op = match *msg{
             serial::Message::OsdOp(ref osd_op) => osd_op,
             serial::Message::OsdSubop(ref sub_op) => sub_op,
             _ => return Err("Bad type".to_string())
@@ -464,7 +455,7 @@ fn log_msg_to_carbon(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
             header: header,
             flags: op.flags,
             operation_count: op.operation_count,
-            size: op.operation.size,
+            size: op.operation.payload_size,
             timestamp: milliseconds_since_epoch,
         };
         let carbon_data = format!("{}.{}", carbon_root_key, try!(doc.to_carbon_string(&carbon.root_key)));
@@ -473,9 +464,9 @@ fn log_msg_to_carbon(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
     Ok(())
 }
 
-fn log_msg_to_elasticsearch(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
+fn log_msg_to_elasticsearch(header: &PacketHeader, msg: &serial::Message, output_args: &Args)->Result<(),String>{
     if output_args.elasticsearch.is_some() && output_args.outputs.contains(&"elasticsearch".to_string()){
-        let op = match msg.msg {
+        let op = match *msg{
             serial::Message::OsdOp(ref osd_op) => osd_op,
             serial::Message::OsdSubop(ref sub_op) => sub_op,
             _ => return Err("Bad type".to_string())
@@ -485,7 +476,7 @@ fn log_msg_to_elasticsearch(header: &PacketHeader, msg: &serial::CephMsgrMsg, ou
             header: header,
             flags: op.flags,
             operation_count: op.operation_count,
-            size: op.operation.size,
+            size: op.operation.payload_size,
             timestamp: milliseconds_since_epoch,
         };
         let doc_json = try!(doc.to_json());
@@ -496,9 +487,9 @@ fn log_msg_to_elasticsearch(header: &PacketHeader, msg: &serial::CephMsgrMsg, ou
     Ok(())
 }
 
-fn log_msg_to_stdout(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
+fn log_msg_to_stdout(header: &PacketHeader, msg: &serial::Message, output_args: &Args)->Result<(),String>{
     if output_args.stdout.is_some(){
-        let op = match msg.msg {
+        let op = match *msg{
             serial::Message::OsdOp(ref osd_op) => osd_op,
             serial::Message::OsdSubop(ref sub_op) => sub_op,
             _ => return Err("Bad type".to_string())
@@ -509,16 +500,16 @@ fn log_msg_to_stdout(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
         println!("{}", format!("ceph.{}.{:?}.{} {}",
             &header.src_v4addr.unwrap(),
             op.flags,
-            op.operation.size,
+            op.operation.payload_size,
             time_spec.sec)
         );
     }
     Ok(())
 }
 
-fn log_msg_to_influx(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
+fn log_msg_to_influx(header: &PacketHeader, msg: &serial::Message, output_args: &Args)->Result<(),String>{
     if output_args.influx.is_some() && output_args.outputs.contains(&"influx".to_string()) {
-        let op = match msg.msg {
+        let op = match *msg{
             serial::Message::OsdOp(ref osd_op) => osd_op,
             serial::Message::OsdSubop(ref sub_op) => sub_op,
             _ => return Err("Bad type".to_string())
@@ -555,7 +546,7 @@ fn log_msg_to_influx(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
                 }
             },
         };
-        let size = op.operation.size as f64;
+        let size = op.operation.payload_size as f64;
         let count = op.operation_count as i64;
         let flags: String = format!("{:?}", op.flags).clone();
         let mut measurement = Measurement::new("ceph");
@@ -580,19 +571,39 @@ fn log_msg_to_influx(header: &PacketHeader, msg: &serial::CephMsgrMsg, output_ar
     Ok(())
 }
 
-fn process_packet(header: PacketHeader, msg: serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
+fn process_packet(header: PacketHeader, msg: &serial::CephMsgrMsg, output_args: &Args)->Result<(),String>{
     //Process OSD operation packets
-    let _ = log_msg_to_carbon(&header, &msg, output_args);
-    let _ = log_msg_to_elasticsearch(&header, &msg, output_args);
-    let _ = log_msg_to_stdout(&header, &msg, output_args);
-    let _ = log_msg_to_influx(&header, &msg, output_args);
+    for ceph_msg in msg.messages.iter(){
+        let _ = log_msg_to_carbon(&header, &ceph_msg, output_args);
+        let _ = log_msg_to_elasticsearch(&header, &ceph_msg, output_args);
+        let _ = log_msg_to_stdout(&header, &ceph_msg, output_args);
+        let _ = log_msg_to_influx(&header, &ceph_msg, output_args);
+    }
     Ok(())
 }
 
 //MSGR is Ceph's outer message protocol
-fn dissect_msgr<'a>(cursor: &mut Cursor<&'a [u8]>)->Result<serial::CephMsgrMsg, serial::SerialError>{
-    let result = try!(serial::CephMsgrMsg::read_from_wire(cursor));
-    return Ok(result);
+fn dissect_msgr<'a>(header: PacketHeader, output_args: &Args, input: &'a [u8])->Result<(), serial::SerialError>{
+    let result = serial::CephMsgrMsg::read_from_wire(input);
+    match result{
+        nom::IResult::Done(ref leftovers, ref ceph) => {
+                process_packet(header, ceph, output_args);
+                return Ok(());
+        },
+        nom::IResult::Error(ref err) => {
+            return Err(serial::SerialError::new(format!("Parsing error: {:?}", err)));
+        },
+        nom::IResult::Incomplete(ref needed) => {
+            match needed{
+                &nom::Needed::Unknown =>{
+                    return Err(serial::SerialError::new(format!("Incomplete parsing.  Needed unknown amount more")));
+                }
+                &nom::Needed::Size(ref size) =>{
+                    return Err(serial::SerialError::new(format!("Incomplete parsing.  Needed {:?}", size)));
+                }
+            }
+        },
+    }
 }
 
 fn main() {
@@ -606,7 +617,7 @@ fn main() {
             return;
         }
     };
-    
+
     for output in &args.outputs {
         info!("Logging to {}", output);
     }
@@ -678,16 +689,8 @@ fn main() {
                         match parse_etherframe(&mut cursor){
                             //The packet parsing was clean
                             Ok(header) => {
-                                //Try to parse some Ceph info from the packet
-                                if let Ok(dissect_result) = dissect_msgr(&mut cursor){
-                                    //Try to send the packet off to Elasticsearch, Carbon, stdout, etc
-                                    //let args_clone = args.clone();
-                                    let print_result = process_packet(header, dissect_result, &args);
-                                    debug!("Processed packet({}): {:?}",&device_name, &print_result);
-                                }else{
-                                    //Failed to parse Ceph packet.  Ignore
-                                    trace!("Failed to dissect ceph packet from raw packet: {:?}", cursor);
-                                }
+                                let position = cursor.position() as usize;
+                                dissect_msgr(header, &args, &cursor.get_ref()[position..]);
                             }
                             //The packet parsing failed
                             Err(_) => {

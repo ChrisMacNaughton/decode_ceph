@@ -1,19 +1,23 @@
 extern crate byteorder;
 extern crate crypto as rust_crypto;
 extern crate num;
+extern crate rand;
 extern crate time;
 use serial;
 
-use self::byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use self::num::FromPrimitive;
+//use self::byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+//use self::num::FromPrimitive;
 use self::rust_crypto::{ symmetriccipher, buffer, aes, blockmodes };
 use self::rust_crypto::buffer::{ ReadBuffer, WriteBuffer, BufferResult };
+use self::rand::os::OsRng;
+
+use self::rand::Rng;
 
 use std::io::prelude::*;
 use std::ops::Add;
 
 static CEPH_AES_IV: &'static str = "cephsageyudagreg";
-
+static AUTH_ENC_MAGIC: &'static str = "0xff009cad8826aa55ull";
 /*
   #define CEPH_AES_IV "cephsageyudagreg"
   #define CEPHX_GET_AUTH_SESSION_KEY      0x0100
@@ -80,9 +84,33 @@ static CEPH_AES_IV: &'static str = "cephsageyudagreg";
   the service (steps 1 and 2), and the second one would be to authenticate with
   the service, using that ticket.
 */
+enum MonitorClientState {
+    None,
+    Negotiating,
+    Authenticating,
+    HaveSession,
+}
 
-pub struct CephXServerChallenge{
-  server_challenge: u64
+pub struct CephXChallengeBlob{
+    server_challenge: u64,
+    client_challenge: u64,
+}
+
+impl CephXChallengeBlob{
+
+    //Start a new challenge
+    fn new()->Self{
+        let mut rand_source = OsRng::new().unwrap();
+
+        return CephXChallengeBlob{
+            server_challenge: 0,
+            client_challenge: rand_source.next_u64(),
+        }
+    }
+    fn encrypt(secret: Vec<u8>){
+        //secret = key
+
+    }
 }
 
 struct CephXRequestHeader{
@@ -99,6 +127,7 @@ pub struct AuthCapsInfo {
     pub caps: String,
 }
 
+/*
 impl serial::CephPrimitive for AuthCapsInfo{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, serial::SerialError>{
         //Struct Version
@@ -134,6 +163,7 @@ impl serial::CephPrimitive for AuthCapsInfo{
         return Ok(buffer);
     }
 }
+*/
 
 pub struct AuthTicket {
     pub name: serial::CephEntity,
@@ -189,6 +219,7 @@ impl AuthTicket{
     }
 }
 
+/*
 impl serial::CephPrimitive for AuthTicket{
     fn read_from_wire<R: Read>(cursor: &mut R) -> Result<Self, serial::SerialError>{
         //Struct Version
@@ -218,7 +249,6 @@ impl serial::CephPrimitive for AuthTicket{
             }
         );
     }
-
 	fn write_to_wire(&self) -> Result<Vec<u8>, serial::SerialError>{
         let mut buffer: Vec<u8> = Vec::new();
         //Struct Version
@@ -235,19 +265,162 @@ impl serial::CephPrimitive for AuthTicket{
         return Ok(buffer);
     }
 }
+*/
+
+pub struct CryptoAesKeyHandler{
+    pub encryption_key: String,
+    pub description_key: String,
+}
+
+pub enum CryptoKeyHandler{
+    Aes(CryptoAesKeyHandler),
+    None,
+}
+
+impl CryptoKeyHandler{
+    fn create(self){
+        match self{
+            CryptoKeyHandler::Aes(ref aes_handler) =>{
+
+            },
+            CryptoKeyHandler::None =>{
+
+            }
+        }
+    }
+    fn validate_secret(self){
+        match self{
+            CryptoKeyHandler::Aes(ref aes_handler) =>{
+
+            },
+            CryptoKeyHandler::None =>{
+
+            }
+        }
+    }
+    fn encrypt(self){
+        match self{
+            CryptoKeyHandler::Aes(ref aes_handler) =>{
+
+            },
+            CryptoKeyHandler::None =>{
+
+            }
+        }
+    }
+    fn decrypt(self){
+        match self{
+            CryptoKeyHandler::Aes(ref aes_handler) =>{
+
+            },
+            CryptoKeyHandler::None =>{
+
+            }
+        }
+    }
+}
+
+pub struct AuthHandler{
+    state: MonitorClientState,
+}
+
+impl AuthHandler{
+    fn calculate_client_server_challenge(){
+        //client challenge is random bytes
+        //encrypt
+        //let challenge = CephXChallengeBlob::new();
+
+    }
+    pub fn authenticate(self){
+        match self.state{
+            MonitorClientState::Negotiating => {
+                /*
+                //TODO: Translate me to Rust
+                if (!auth || (int)m->protocol != auth->get_protocol()) {
+                    delete auth;
+                    auth = get_auth_client_handler(cct, m->protocol, rotating_secrets);
+                    if (!auth) {
+                        ldout(cct, 10) << "no handler for protocol " << m->protocol << dendl;
+                        if (m->result == -ENOTSUP) {
+                            ldout(cct, 10) << "none of our auth protocols are supported by the server" << dendl;
+                            authenticate_err = m->result;
+                            auth_cond.SignalAll();
+                        }
+                        m->put();
+                        return;
+                    }
+                    auth->set_want_keys(want_keys);
+                    auth->init(entity_name);
+                    auth->set_global_id(global_id);
+                    } else {
+                        auth->reset();
+                    }
+                    */
+
+                //TODO: How do I mutate the state machine?
+                //self.state = MonitorClientState::Authenticating;
+            },
+            MonitorClientState::HaveSession => {
+                //Already authenticated
+
+            },
+            _ => {
+                //What should the default case be?
+            }
+        }
+    }
+}
 
 pub struct CryptoKey{
     pub key_type: u16,
     pub created: serial::Utime,
+
+    //secret is the keyring secret
     pub secret: Vec<u8>, //what should bufferptr be?
+    pub key_handler: CryptoKeyHandler,
 }
 
 impl CryptoKey{
     pub fn encode(&self){
-
+        //let data = try!(encrypt(data: &[u8], ceph_key: &[u8]));
     }
     pub fn decode(&self){
+        //let data = try!(decrypt(encrypted_data: &[u8], ceph_key: &[u8]));
+    }
+    pub fn set_secret(&self){ //int type, const bufferptr& s, utime_t createdint type, const bufferptr& s, utime_t created
+        /*
+        _set_secret {
+        404   if (s.length() == 0) {
+        405     secret = s;
+        406     ckh.reset();
+        407     return 0;
+        408   }
+        409
+        410   CryptoHandler *ch = CryptoHandler::create(t);
+        411   if (ch) {
+        412     int ret = ch->validate_secret(s);
+        413     if (ret < 0) {
+        414       delete ch;
+        415       return ret;
+        416     }
+        417     string error;
+        418     ckh.reset(ch->get_key_handler(s, error));
+        419     delete ch;
+        420     if (error.length()) {
+        421       return -EIO;
+        422     }
+        423   }
+        424   type = t;
+        425   secret = s;
+        426   return 0;
+        }
 
+        395   int r = _set_secret(type, s);
+        396   if (r < 0)
+        397     return r;
+        398   this->created = c;
+        399   return 0;
+         */
     }
 }
 

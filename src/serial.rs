@@ -276,6 +276,22 @@ mod tests{
 
 }
 
+//Return Some or None no matter what.
+macro_rules! hard_opt(
+  ($i:expr, $submac:ident!( $($args:tt)* )) => (
+    {
+      match $submac!($i, $($args)*) {
+        nom::IResult::Done(i,o)     => nom::IResult::Done(i, Some(o)),
+        nom::IResult::Error(_)      => nom::IResult::Done($i, None),
+        nom::IResult::Incomplete(i) => nom::IResult::Done($i, None),
+      }
+    }
+  );
+  ($i:expr, $f:expr) => (
+    opt!($i, call!($f));
+  );
+);
+
 #[derive(Debug)]
 pub enum SerialError {
 	IoError(io::Error),
@@ -2072,7 +2088,7 @@ impl<'a> CephPrimitive<'a> for CephOsdOperation<'a>{
             snapshot_seq: le_u64 ~
             snapshot_count: le_u32 ~
             retry_attempt: le_u32 ~
-            payload: opt!(take!(operation.payload_size)),
+            payload: hard_opt!(take!(operation.payload_size)),
             ||{
                 CephOsdOperation{
                     client: client,

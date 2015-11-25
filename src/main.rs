@@ -455,7 +455,7 @@ fn log_msg_to_carbon(header: &PacketHeader, msg: &serial::Message, output_args: 
             header: header,
             flags: op.flags,
             operation_count: op.operation_count,
-            size: op.operation.size,
+            size: op.operation.payload_size,
             timestamp: milliseconds_since_epoch,
         };
         let carbon_data = format!("{}.{}", carbon_root_key, try!(doc.to_carbon_string(&carbon.root_key)));
@@ -476,7 +476,7 @@ fn log_msg_to_elasticsearch(header: &PacketHeader, msg: &serial::Message, output
             header: header,
             flags: op.flags,
             operation_count: op.operation_count,
-            size: op.operation.size,
+            size: op.operation.payload_size,
             timestamp: milliseconds_since_epoch,
         };
         let doc_json = try!(doc.to_json());
@@ -500,7 +500,7 @@ fn log_msg_to_stdout(header: &PacketHeader, msg: &serial::Message, output_args: 
         println!("{}", format!("ceph.{}.{:?}.{} {}",
             &header.src_v4addr.unwrap(),
             op.flags,
-            op.operation.size,
+            op.operation.payload_size,
             time_spec.sec)
         );
     }
@@ -546,7 +546,7 @@ fn log_msg_to_influx(header: &PacketHeader, msg: &serial::Message, output_args: 
                 }
             },
         };
-        let size = op.operation.size as f64;
+        let size = op.operation.payload_size as f64;
         let count = op.operation_count as i64;
         let flags: String = format!("{:?}", op.flags).clone();
         let mut measurement = Measurement::new("ceph");

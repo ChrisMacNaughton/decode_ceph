@@ -206,7 +206,7 @@ struct Document<'a>{
     flags: serial::OsdOp,
     operation_count: u16,
     //placement_group: serial::PlacementGroup,
-    size: u64,
+    size: u32,
     timestamp: u64, //Milliseconds since epoch
 }
 

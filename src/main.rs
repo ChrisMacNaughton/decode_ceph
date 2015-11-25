@@ -133,7 +133,7 @@ mod tests{
             operation_count: 1,
             operation: serial::Operation {
                 operation: 8706,
-                flags: 0,
+                flags: serial::OsdOp::from_bits(0).unwrap(),
                 offset: 0,
                 size: 12,
                 truncate_size: 0,

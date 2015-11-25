@@ -1197,6 +1197,26 @@ impl<'a> CephPrimitive<'a> for OsdInstructions<'a> {
         return Ok(buffer);
     }
 }
+#[test]
+fn test_object_locator(){
+    let bytes = vec![
+        0x06 ,0x03 ,0x1c ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0xff ,0xff
+        ,0xff ,0xff ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0xff ,0xff ,0xff ,0xff ,0xff ,0xff
+        ,0xff ,0xff
+    ];
+    let x: &[u8] = &[];
+    let expected_result = ObjectLocator {
+        encoding_version: 6,
+        min_compat_version: 3,
+        size: 28,
+        pool: 0,
+        namespace_size: 0,
+        namespace_data: &[]
+    };
+    let result = ObjectLocator::read_from_wire(&bytes);
+    println!("ObjectLocator parse result: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
+}
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct ObjectLocator<'a>{
@@ -1244,6 +1264,24 @@ impl<'a> CephPrimitive<'a> for ObjectLocator<'a> {
 
         return Ok(buffer);
     }
+}
+
+#[test]
+fn test_placement_group(){
+    let bytes = vec![
+        0x01 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x62 ,0x1c ,0xa4 ,0x5d ,0xff ,0xff ,0xff
+        ,0xff
+    ];
+
+    let x: &[u8] = &[];
+    let expected_result = PlacementGroup {
+        group_version: 1,
+        pool: 0,
+        seed: 1571036258,
+        preferred: -1 };
+    let result = PlacementGroup::read_from_wire(&bytes);
+    println!("PlacementGroup parse result: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
 }
 
 #[derive(Debug,Eq,PartialEq)]
@@ -1612,6 +1650,21 @@ impl<'a> CephPrimitive<'a> for MonMap<'a>{
         return Ok(buffer);
     }
 }
+#[test]
+fn test_object_id(){
+    let bytes = vec![
+        0x08 ,0x00 ,0x00 ,0x00 ,0x6d ,0x79 ,0x6f ,0x62 ,0x6a ,0x65 ,0x63 ,0x74
+    ];
+    let x: &[u8] = &[];
+    let expected_result = ObjectId {
+        size: 8,
+        data: &[0x6d ,0x79 ,0x6f ,0x62 ,0x6a ,0x65 ,0x63 ,0x74]
+    };
+    let result = ObjectId::read_from_wire(&bytes);
+    println!("ObjectId parse result: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
+}
+
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct ObjectId<'a>{
@@ -1643,10 +1696,32 @@ impl<'a> CephPrimitive<'a> for ObjectId<'a> {
 
 }
 
+#[test]
+fn test_operation(){
+    let bytes = vec![
+        0x02 ,0x22 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x0d ,0x00
+        ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00
+        ,0x00 ,0x00 ,0x0d ,0x00 ,0x00 ,0x00
+    ];
+    let x: &[u8] = &[];
+    let expected_result = Operation {
+        operation: 8706,
+        flags: OsdOp::from_bits(0).unwrap(),
+        offset: 0,
+        size: 13,
+        truncate_size: 0,
+        truncate_seq: 0,
+        payload_size: 13,
+    };
+    let result = Operation::read_from_wire(&bytes);
+    println!("Operation parse result: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
+}
+
 #[derive(Debug,Eq,PartialEq)]
 pub struct Operation{
     pub operation: u16,
-    pub flags: u32,
+    pub flags: OsdOp,
     pub offset: u64,
     pub size: u64,
     pub truncate_size: u64,
@@ -1658,7 +1733,8 @@ impl<'a> CephPrimitive<'a> for Operation {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             operation: le_u16 ~
-            flags: le_u32 ~
+            flags_bits: le_u32 ~
+            flags: expr_opt!(OsdOp::from_bits(flags_bits)) ~
             offset: le_u64 ~
             size: le_u64 ~
             truncate_size: le_u64 ~
@@ -1680,7 +1756,7 @@ impl<'a> CephPrimitive<'a> for Operation {
 	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
         let mut buffer:Vec<u8> = Vec::new();
         try!(buffer.write_u16::<LittleEndian>(self.operation));
-        try!(buffer.write_u32::<LittleEndian>(self.flags));
+        try!(buffer.write_u32::<LittleEndian>(self.flags.bits));
         try!(buffer.write_u64::<LittleEndian>(self.offset));
         try!(buffer.write_u64::<LittleEndian>(self.size));
         try!(buffer.write_u64::<LittleEndian>(self.truncate_size));
@@ -1792,7 +1868,7 @@ fn test_osd_operation_reply(){
             operation_count: 1,
             operation: Operation {
                 operation: 8706,
-                flags: 0,
+                flags: OsdOp::from_bits(0).unwrap(),
                 offset: 0,
                 size: 13,
                 truncate_size: 0,
@@ -1908,9 +1984,11 @@ fn test_osd_operation(){
         0x00, 0x02, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x0d, 0x00, 0x00, 0x00, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x68 ,0x65 ,0x6c ,0x6c ,0x6f ,0x20 ,0x77 ,0x6f ,0x72 ,0x6c ,0x64 ,0x20 ,0x0a
     ];
     let x: &[u8] = &[];
+    let payload = vec![0x68 ,0x65 ,0x6c ,0x6c ,0x6f ,0x20 ,0x77 ,0x6f ,0x72 ,0x6c ,0x64 ,0x20 ,0x0a];
     let expected_result = CephOsdOperation {
         client: 0,
         map_epoch: 9,
@@ -1938,7 +2016,7 @@ fn test_osd_operation(){
         operation_count: 1,
         operation: Operation {
             operation: 8706, //TODO: Decode me.  ceph/src/include/rados.h Line #161
-            flags: 0, //TODO: Decode.
+            flags: OsdOp::from_bits(0).unwrap(),
             offset: 0,
             size: 13,
             truncate_size: 0,
@@ -1948,7 +2026,7 @@ fn test_osd_operation(){
         snapshot_seq: 0,
         snapshot_count: 0,
         retry_attempt: 0,
-        payload: None,
+        payload: Some(&payload),
     };
     let result = CephOsdOperation::read_from_wire(&bytes);
     println!("CephOsdOperation parse result: {:?}", result);
@@ -1994,7 +2072,7 @@ impl<'a> CephPrimitive<'a> for CephOsdOperation<'a>{
             snapshot_seq: le_u64 ~
             snapshot_count: le_u32 ~
             retry_attempt: le_u32 ~
-            payload: opt!(take!(operation.size)),
+            payload: opt!(take!(operation.payload_size)),
             ||{
                 CephOsdOperation{
                     client: client,
@@ -2012,7 +2090,7 @@ impl<'a> CephPrimitive<'a> for CephOsdOperation<'a>{
                     snapshot_seq: snapshot_seq,
                     snapshot_count: snapshot_count,
                     retry_attempt: retry_attempt,
-                    payload: payload,//&[],
+                    payload: payload,
                 }
             }
         )
@@ -2267,6 +2345,21 @@ impl<'a> CephPrimitive<'a> for CephEntityName<'a>{
         buffer.extend(self.id.as_bytes());
         return Ok(buffer);
     }
+}
+
+#[test]
+fn test_utime(){
+    let bytes = vec![
+        0xce ,0x94 ,0x15 ,0x56 ,0x78 ,0xeb ,0xa8 ,0x11
+    ];
+    let x: &[u8] = &[];
+    let expected_result = Utime {
+        tv_sec: 1444254926,
+        tv_nsec: 296283000,
+    };
+    let result = Utime::read_from_wire(&bytes);
+    println!("Utime parse result: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
 }
 
 #[derive(Debug,Eq,PartialEq)]

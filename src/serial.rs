@@ -403,23 +403,23 @@ fn test_ceph_connect_reply(){
         0x01,0xff,0xff,0xff,0xff,0xff,0x2f,0x00,0x00,0x08,0x00,0x00,0x00,0x01,0x00,0x00,
         0x00,0x0f,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01
     ];
-    /*
+    let x: &[u8] = &[];
     let expected_result = CephMsgConnectReply {
         tag: CephMsg::Ready,
-        features: CephFeatures::CEPH_ALL,
+        features: CEPH_ALL,
         global_seq: 8,
         connect_seq: 1,
-        protocol_version: Protocol::Unknown,
+        protocol_version: Protocol::MonProtocol,
         authorizer_len: 0,
-        flags: 0,
+        flags: 1,
         authorizer: vec![],
     };
-    */
     let result = CephMsgConnectReply::read_from_wire(&bytes);
-    println!("CephMsgConnectReply parse result: {:?}", result);
+    println!("ceph_connect_reply: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct CephMsgConnectReply{
     pub tag: CephMsg,
     pub features: CephFeatures,
@@ -575,7 +575,7 @@ enum Crypto {
 
 enum_from_primitive!{
 #[repr(u32)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Protocol{
     OsdProtocol = 24, /*server/client*/
     MdsProtocol = 32, /*server/client*/
@@ -1344,7 +1344,6 @@ pub struct Monitor<'a>{
 
 impl<'a> CephPrimitive<'a> for Monitor<'a>{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
-        println!("Monitor land");
         chain!(input,
             name: parse_str ~
             entity_addr: call!(EntityAddr::read_from_wire),

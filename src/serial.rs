@@ -27,6 +27,7 @@ mod tests{
     use std::io::Cursor;
     use std::io::prelude::*;
     use crypto;
+    use std::net::{Ipv4Addr,Ipv6Addr};
 
     #[test]
     fn test_bullshit(){
@@ -60,6 +61,25 @@ mod tests{
         let result = CephMsgrMsg::read_from_wire(&packet[..]);
         println!("{:?}", result);
     }
+
+    // #[test]
+    // fn test_parse_header() {
+    //     let packet = [
+    //         0x04, 0x18, 0xd6, 0xf0, 0x55, 0xde, 0x3c, 0x15, 0xc2, 0xe1, 0x29, 0x4c, 0x08, 0x00, 0x45, 0x00,
+    //         0x00, 0x8f, 0x15, 0x3f, 0x00, 0x00, 0x40, 0x11, 0xdc, 0xc9, 0x0a, 0x00, 0x01, 0x14, 0xad, 0xc2,
+    //         0xcf, 0x7f, 0xd2, 0xed, 0x4b, 0x69, 0x00, 0x7b, 0x08, 0xe0, 0x90, 0x6f, 0x7f, 0xcc, 0xf4, 0x7e,
+    //         0xea, 0x1e, 0xc7, 0xdf, 0xa0, 0xbd, 0xbe, 0xde, 0x00, 0x02, 0x10, 0xe1, 0x32, 0x67, 0xb2, 0x2d,
+    //         0x00, 0x00, 0xb6, 0xc8, 0xdb, 0x43, 0xe9, 0x16, 0x7e, 0xba, 0x7e, 0xca, 0x55, 0x8a, 0xd0, 0x25,
+    //         0x55, 0x99, 0xf5, 0x3a, 0x46, 0xbf, 0xbe, 0x0c, 0xbc, 0xac, 0x4b, 0x18, 0xe3, 0xc4, 0x5b, 0xfd,
+    //         0x94, 0x36, 0x14, 0xcf, 0xff, 0x05, 0xdf, 0xfc, 0x71, 0x66, 0x93, 0xf1, 0xcc, 0xac, 0xf6, 0xe0,
+    //         0xce, 0x53, 0x78, 0x82, 0xc3, 0x2b, 0xd4, 0x12, 0x4b, 0x2d, 0xf7, 0xfe, 0xf8, 0x4a, 0x82, 0xe0,
+    //         0xf7, 0x86, 0x51, 0xdb, 0x17, 0x94, 0xf4, 0xf4, 0xb2, 0x3e, 0x3a, 0x4c, 0x01, 0x17, 0xe3, 0x56,
+    //         0x3d, 0xc4, 0x36, 0x58, 0x27, 0x76, 0xdf, 0x23, 0x30, 0x61, 0xe6, 0xc5, 0x68,
+    //     ];
+
+    //     let result = super::PacketHeader::read_from_wire(&packet);
+    //     println!("result is {:?}", result);
+    // }
 
     //Replay captured data and test results
     #[test]
@@ -211,6 +231,92 @@ mod tests{
     #[test]
     fn test_connect_reply(){
 
+    }
+
+    #[test]
+    fn test_ipv4_parsing() {
+        let bytes = [
+            0x0a, 0x00, 0x03, 0x01
+        ];
+        let expected_result = Ipv4Addr::new(10,0,3,1);
+        match super::ipv4_parser(&bytes) {
+            super::nom::IResult::Done(_, address) => {
+                assert_eq!(expected_result, address);
+            },
+            super::nom::IResult::Incomplete(i) => panic!(format!("Incomplete: {:?}", i)),
+            _ => panic!("Error while parsing IP")
+        }
+    }
+
+    #[test]
+    fn test_ipv6_parsing() {
+        let bytes = [
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        ];
+        let expected_result = Ipv6Addr::new(0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF);
+        match super::ipv6_parser(&bytes) {
+            super::nom::IResult::Done(_, address) => {
+                assert_eq!(expected_result, address);
+            },
+            super::nom::IResult::Incomplete(i) => panic!(format!("Incomplete: {:?}", i)),
+            _ => panic!("Error while parsing IP")
+        }
+    }
+
+    #[test]
+    fn test_packet_parsing() {
+        let mut packet = [
+            0x3c, 0x15, 0xc2, 0xe1, 0x29, 0x4c, 0x04, 0x18, 0xd6, 0xf0, 0x55, 0xde, 0x08, 0x00, 0x45, 0x00,
+            0x00, 0x28, 0x89, 0xa3, 0x40, 0x00, 0x34, 0x06, 0x24, 0xe4, 0xcd, 0x86, 0xbf, 0xae, 0x0a, 0x00,
+            0x01, 0x14, 0x00, 0x50, 0xe0, 0xb8, 0xf6, 0x72, 0x22, 0xed, 0x61, 0xb9, 0x11, 0x89, 0x50, 0x11,
+            0x00, 0xf5, 0xa8, 0xea, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let destination_mac = MacAddress {
+            a: &[0x3c],
+            b: &[0x15],
+            c: &[0xc2],
+            d: &[0xe1],
+            e: &[0x29],
+            f: &[0x4c],
+        };
+
+        // match super::mac_address(&packet) {
+        //     super::nom::IResult::Done(_, mac) => {
+        //         assert_eq!(destination_mac, mac);
+        //     },
+        //     super::nom::IResult::Incomplete(i) => panic!(format!("Incomplete: {:?}", i)),
+        //     _ => panic!("Error while parsing IP")
+        // }
+
+        let source_mac = MacAddress {
+            a: &[0x04],
+            b: &[0x18],
+            c: &[0xd6],
+            d: &[0xf0],
+            e: &[0x55],
+            f: &[0xde],
+        };
+
+        match super::packet(&packet) {
+            super::nom::IResult::Done(_, packet) => {
+                assert_eq!(destination_mac, packet.dest_mac);
+                assert_eq!(source_mac, packet.source_mac);
+                assert_eq!(super::IPVersion::IPV4, packet.version);
+                // println!("Version: {:?} / matches : {:?}?", packet.version, [0x08]);
+                // println!("src_port: {}", packet.source_port);
+                // println!("dst_port: {}", packet.dst_port);
+            },
+            super::nom::IResult::Incomplete(i) => panic!(format!("Incomplete: {:?}", i)),
+            _ => panic!("Error while parsing IP")
+        }
+
+        // match super::mac_address(&packet) {
+        //     super::nom::IResult::Done(_, mac) => {
+        //         assert_eq!(source_mac, mac);
+        //     },
+        //     super::nom::IResult::Incomplete(i) => panic!(format!("Incomplete: {:?}", i)),
+        //     _ => panic!("Error while parsing IP")
+        // }
     }
 
     #[test]
@@ -873,6 +979,141 @@ pub enum Message<'a>{
     Nop,
 }
 
+#[derive(Debug,Eq,PartialEq)]
+pub struct PacketHeader{
+    pub src_port: u16,
+    pub dst_port: u16,
+
+    pub src_v4addr: Option<Ipv4Addr>,
+    pub dst_v4addr: Option<Ipv4Addr>,
+
+    pub src_v6addr: Option<Ipv6Addr>,
+    pub dst_v6addr: Option<Ipv6Addr>,
+}
+
+// pub struct CephMessageWithHeader<'a> {
+//     pub header: Option<&'a PacketHeader>,
+//     pub message: Option<&'a CephMsgrMsg<'a> >,
+// }
+
+// pub fn process_input<'a>(input: &'a [u8] ) -> Result<CephMessageWithHeader, SerialError> {
+//     Ok(CephMessageWithHeader {
+//         header: match PacketHeader::read_from_wire(input) {
+//             nom::IResult::Done(_, ref header) => Some(header),
+//             _ => None,
+//         },
+//         message: match CephMsgrMsg::read_from_wire(input) {
+//             nom::IResult::Done(_, ref ceph) => Some(ceph),
+//             _ => None,
+//         }
+//     })
+// }
+
+fn name(s: &str) -> &str {
+    "str"
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct MacAddress<'a> {
+    pub a: &'a [u8],
+    pub b: &'a [u8],
+    pub c: &'a [u8],
+    pub d: &'a [u8],
+    pub e: &'a [u8],
+    pub f: &'a [u8],
+}
+
+named!(mac_address <&[u8], MacAddress>,
+    chain!(
+        a: take!(1) ~
+        b: take!(1) ~
+        c: take!(1) ~
+        d: take!(1) ~
+        e: take!(1) ~
+        f: take!(1),
+        || {
+            MacAddress{
+                a: a,
+                b: b,
+                c: c,
+                d: d,
+                e: e,
+                f: f
+            }
+        }
+    )
+);
+
+named!(ipv4_parser <&[u8], Ipv4Addr >,
+    chain!(
+        a: le_u8 ~
+        b: le_u8 ~
+        c: le_u8 ~
+        d: le_u8,
+        || {
+            Ipv4Addr::new(a,b,c,d)
+        }
+    )
+);
+
+named!(ipv6_parser <&[u8], Ipv6Addr>,
+    chain!(
+        a: be_u16 ~
+        b: be_u16 ~
+        c: be_u16 ~
+        d: be_u16 ~
+        e: be_u16 ~
+        f: be_u16 ~
+        g: be_u16 ~
+        h: be_u16,
+        ||{
+            Ipv6Addr::new(a,b,c,d,e,f,g,h)
+        }
+    )
+);
+#[derive(Debug,Eq,PartialEq)]
+pub enum IPVersion {
+    IPV4,
+    IPV6
+}
+struct Packet<'a> {
+    source_mac: MacAddress<'a>,
+    dest_mac: MacAddress<'a>,
+    version: IPVersion,
+    // source_port: u8,
+    // dst_port: u8,
+}
+
+named!(packet <&[u8], Packet>,
+    chain!(
+        dst: mac_address ~
+        src: mac_address ~
+        version: take!(1),
+        // service_field: le_u8 ~
+        // take!(129) ~
+        // source_port: le_u8 ~
+        // dst_port: le_u8,
+    ||{
+        Packet {
+            source_mac: src,
+            dest_mac: dst,
+            // version: version
+            version: match version[0] {
+                0x08 => IPVersion::IPV4,
+                _ => IPVersion::IPV6
+            },
+            // source_port: source_port,
+            // dst_port: dst_port,
+        }
+    }
+    )
+);
+// impl <'a> PacketHeader{
+//     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+//         unimplemented!();
+//     }
+// }
+
 //Decode the msg from the wire and return the correct variant
 fn read_messages_from_wire<'a>(cursor: &'a [u8], msg_type: &CephMsgType) -> nom::IResult<&'a [u8], Vec<Message<'a>>>{
     match msg_type{
@@ -1344,7 +1585,7 @@ pub struct Monitor<'a>{
 
 impl<'a> CephPrimitive<'a> for Monitor<'a>{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
-        println!("Monitor land");
+        // println!("Monitor land");
         chain!(input,
             name: parse_str ~
             entity_addr: call!(EntityAddr::read_from_wire),
@@ -3044,13 +3285,10 @@ fn test_ipv4(){
 fn parse_ipv4<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Ipv4Addr> {
     //tag!(0x0002) ~
     chain!(i,
-        a: le_u8 ~
-        b: le_u8 ~
-        c: le_u8 ~
-        d: le_u8 ~
+        ip: ipv4_parser ~
         padding: take!(120),
         || {
-            Ipv4Addr::new(a,b,c,d)
+            ip
         }
     )
 }
@@ -3058,17 +3296,10 @@ fn parse_ipv4<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Ipv4Addr> {
 fn parse_ipv6<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Ipv6Addr> {
     //tag!(0x000A) ~
     chain!(i,
-        a: be_u16 ~
-        b: be_u16 ~
-        c: be_u16 ~
-        d: be_u16 ~
-        e: be_u16 ~
-        f: be_u16 ~
-        g: be_u16 ~
-        h: be_u16 ~
+        ip: ipv6_parser ~
         padding: take!(108),
         ||{
-            Ipv6Addr::new(a,b,c,d,e,f,g,h)
+            ip
         }
     )
 }

@@ -289,7 +289,7 @@ mod tests{
             f: &[0xde],
         };
 
-        match super::packet(&packet) {
+        match super::packet_header(&packet) {
             super::nom::IResult::Done(_, packet) => {
                 assert_eq!(destination_mac, packet.dest_mac);
                 assert_eq!(source_mac, packet.source_mac);
@@ -297,15 +297,15 @@ mod tests{
                 // println!("Version: {:?} / matches : {:?}?", packet.version, [0x08]);
                 // println!("src_address: {}", packet.source_address);
                 let mut expected_address = Ipv4Addr::new(205,134,191,174);
-                assert_eq!(expected_address, packet.source_address);
+                assert_eq!(expected_address, packet.src_v4addr.unwrap());
                 expected_address = Ipv4Addr::new(10,0,1,20);
-                assert_eq!(expected_address, packet.dest_address);
+                assert_eq!(expected_address, packet.dst_v4addr.unwrap());
                 assert_eq!(packet.source_port, 80);
                 // println!("dst_address: {}", packet.dest_address);
                 // println!("dst_port: {}", packet.dst_port);
             },
             super::nom::IResult::Incomplete(i) => panic!(format!("Incomplete: {:?}", i)),
-            _ => panic!("Error while parsing IP")
+            _ => panic!("Error while parsing Packet")
         }
     }
 
@@ -346,7 +346,7 @@ mod tests{
                 assert_eq!(result.ceph_message.header.crc, 1053855848);
             },
             super::nom::IResult::Incomplete(i) => panic!(format!("Incomplete: {:?}", i)),
-            _ => panic!("Error while parsing IP")
+            _ => panic!("Error while parsing Packet")
         }
     }
 
@@ -1010,17 +1010,6 @@ pub enum Message<'a>{
     Nop,
 }
 
-#[derive(Debug,Eq,PartialEq)]
-pub struct PacketHeader{
-    pub src_port: u16,
-    pub dst_port: u16,
-
-    pub src_v4addr: Option<Ipv4Addr>,
-    pub dst_v4addr: Option<Ipv4Addr>,
-
-    pub src_v6addr: Option<Ipv6Addr>,
-    pub dst_v6addr: Option<Ipv6Addr>,
-}
 
 // pub struct CephMessageWithHeader<'a> {
 //     pub header: Option<&'a PacketHeader>,
@@ -1041,13 +1030,13 @@ pub struct PacketHeader{
 // }
 #[derive(Debug)]
 pub struct CephMessageWithHeader<'a> {
-    pub header: Packet<'a>,
+    pub header: PacketHeader<'a>,
     pub ceph_message: CephMsgrMsg<'a>,
 }
 
 pub fn parse_ceph_packet(input: &[u8]) -> nom::IResult<&[u8], CephMessageWithHeader>{
     chain!(input, 
-        header: packet ~
+        header: packet_header ~
         take!(28) ~
         ceph_message: call!(CephMsgrMsg::read_from_wire),
         || {
@@ -1123,18 +1112,21 @@ pub enum IPVersion {
     IPV6
 }
 
-#[derive(Debug)]
-pub struct Packet<'a> {
-    source_mac: MacAddress<'a>,
-    dest_mac: MacAddress<'a>,
+#[derive(Debug,Eq,PartialEq)]
+pub struct PacketHeader<'a> {
+    pub source_mac: MacAddress<'a>,
+    pub dest_mac: MacAddress<'a>,
     version: IPVersion,
-    source_address: Ipv4Addr,
-    dest_address: Ipv4Addr,
-    source_port: u16,
-    dst_port: u16,
+    pub src_v4addr: Option<Ipv4Addr>,
+    pub dst_v4addr: Option<Ipv4Addr>,
+
+    pub src_v6addr: Option<Ipv6Addr>,
+    pub dst_v6addr: Option<Ipv6Addr>,
+    pub source_port: u16,
+    pub dst_port: u16,
 }
 
-named!(packet <&[u8], Packet>,
+named!(packet_header <&[u8], PacketHeader>,
     chain!(
         dst: mac_address ~
         src: mac_address ~
@@ -1153,7 +1145,7 @@ named!(packet <&[u8], Packet>,
         // take!(28),
 
     ||{
-        Packet {
+        PacketHeader {
             source_mac: src,
             dest_mac: dst,
             // version: version
@@ -1161,8 +1153,8 @@ named!(packet <&[u8], Packet>,
                 0x08 => IPVersion::IPV4,
                 _ => IPVersion::IPV6
             },
-            source_address: source_address,
-            dest_address: dest_address,
+            src_v4addr: Some(source_address),
+            dst_v4addr: Some(dest_address),
             source_port: source_port,
             dst_port: dst_port,
         }

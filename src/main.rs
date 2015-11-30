@@ -665,7 +665,16 @@ fn main() {
                     //We received a packet
                     Some(packet) =>{
                         let data = packet.data;
-
+                        match serial::parse_ceph_packet(&data) {
+                            nom::IResult::Done(_, result) => {
+                                let _ = process_packet(&result.header, &result.ceph_message, &args);
+                                // println!("Packet is {:?}", result);
+                                // assert_eq!(result.header.source_port, 45732);
+                                // assert_eq!(result.ceph_message.header.crc, 1053855848);
+                            },
+                            nom::IResult::Incomplete(i) => trace!("Incomplete: {:?}", i),
+                            _ => trace!("Error while parsing packet")
+                        }
                         // if let Ok(ceph_message) = serial::process_input(data) {
                         //     process_packet(&ceph_message.header, &ceph_message.message, &args)
                         // }

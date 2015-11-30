@@ -8,7 +8,7 @@ extern crate uuid;
 //Crates
 use self::byteorder::{BigEndian, LittleEndian, WriteBytesExt};
 use self::crc::{crc32, Hasher32};
-use self::nom::{le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16};
+use self::nom::{le_i8, le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16};
 use self::nom::IResult::Done;
 use self::num::FromPrimitive;
 use self::uuid::{ParseError, Uuid};
@@ -406,7 +406,23 @@ fn test_ceph_connect_reply(){
     let x: &[u8] = &[];
     let expected_result = CephMsgConnectReply {
         tag: CephMsg::Ready,
-        features: CEPH_ALL,
+        features: CEPH_FEATURE_UID | CEPH_FEATURE_NOSRCADDR | CEPH_FEATURE_MONCLOCKCHECK |
+            CEPH_FEATURE_FLOCK | CEPH_FEATURE_SUBSCRIBE2 | CEPH_FEATURE_MONNAME |
+            CEPH_FEATURE_RECONNECT_SEQ | CEPH_FEATURE_DIRLAYOUTHASH | CEPH_FEATURE_OBJECTLOCATOR |
+            CEPH_FEATURE_PGID64 | CEPH_FEATURE_INCSUBOSDMAP | CEPH_FEATURE_PGPOOL3 |
+            CEPH_FEATURE_OSDREPLYMUX | CEPH_FEATURE_OSDENC | CEPH_FEATURE_OMAP |
+            CEPH_FEATURE_QUERY_T | CEPH_FEATURE_MONENC | CEPH_FEATURE_INDEP_PG_MAP |
+            CEPH_FEATURE_CRUSH_TUNABLES | CEPH_FEATURE_CHUNKY_SCRUB | CEPH_FEATURE_MON_NULLROUTE |
+            CEPH_FEATURE_MON_GV | CEPH_FEATURE_BACKFILL_RESERVATION | CEPH_FEATURE_MSG_AUTH |
+            CEPH_FEATURE_RECOVERY_RESERVATION | CEPH_FEATURE_CRUSH_TUNABLES1 |
+            CEPH_FEATURE_CREATEPOOLID | CEPH_FEATURE_REPLY_CREATE_INODE | CEPH_FEATURE_OSD_HBMSGS |
+            CEPH_FEATURE_MDSENC | CEPH_FEATURE_OSDHASHPSPOOL | CEPH_FEATURE_MON_SINGLE_PAXOS |
+            CEPH_FEATURE_OSD_SNAPMAPPER | CEPH_FEATURE_MON_SCRUB |
+            CEPH_FEATURE_OSD_PACKED_RECOVERY | CEPH_FEATURE_OSD_CACHEPOOL | CEPH_FEATURE_CRUSH_V2 |
+            CEPH_FEATURE_EXPORT_PEER | CEPH_FEATURE_OSD_ERASURE_CODES | CEPH_FEATURE_OSDMAP_ENC |
+            CEPH_FEATURE_MDS_INLINE_DATA | CEPH_FEATURE_CRUSH_TUNABLES3 |
+            CEPH_FEATURE_OSD_PRIMARY_AFFINITY | CEPH_FEATURE_MSGR_KEEPALIVE2 |
+            CEPH_FEATURE_OSD_POOLRESEND | CEPH_FEATURE_OSD_SET_ALLOC_HINT | CEPH_CLIENT_DEFAULT,
         global_seq: 8,
         connect_seq: 1,
         protocol_version: Protocol::MonProtocol,
@@ -580,6 +596,18 @@ pub enum Protocol{
     OsdProtocol = 24, /*server/client*/
     MdsProtocol = 32, /*server/client*/
     MonProtocol = 15, /*server/client*/
+}
+}
+enum_from_primitive!{
+#[repr(u8)]
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum OsdPingProtocol{
+    Heartbeat = 0,
+    StartHeartbeat = 1,
+    YouDied = 2,
+    StopHeartbeat = 3,
+    Ping = 4,
+    PingReply = 5,
 }
 }
 
@@ -767,6 +795,18 @@ pub enum CephAuthProtocol{
 }
 
 enum_from_primitive!{
+#[repr(i32)]
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum PgQueryProtocol{
+    PG_INFO = 0,
+    PG_LOG = 1,
+    PG_MISSING = 2,
+    PG_FULLLOG = 5,
+}
+}
+
+
+enum_from_primitive!{
 #[repr(u16)]
 #[derive(Debug, Clone,Eq,PartialEq)]
 pub enum CephPriority{
@@ -814,6 +854,8 @@ pub enum Message<'a>{
     MsgRoute,
     MonCommand(MonCommand<'a>),
     MonCommandAck,
+    MonitorSubscribe(MonitorSubscribe<'a>),
+    //MonitorSubscribeAck(MonitorSubscribe),
     Log,
     LogAck,
     Class,
@@ -834,12 +876,12 @@ pub enum Message<'a>{
     OsdMap,
     OsdOp(CephOsdOperation<'a>),
     OsdOpRepl(CephOsdOperationReply<'a>),
-    OsdPing,
+    OsdPing(CephOsdPing),
     OsdSubop(CephOsdOperation<'a>),
     OsdSubopReply(CephOsdOperationReply<'a>),
     OsdPgtemp,
     OsdPgNotify,
-    OsdPgQuery,
+    OsdPgQuery(CephOsdPgQuery),
     OsdPgSummary,
     OsdPgLog,
     OsdPgRemove,
@@ -946,7 +988,27 @@ fn read_messages_from_wire<'a>(cursor: &'a [u8], msg_type: &CephMsgType) -> nom:
                 }
             )
         },
-        _ => {
+        &CephMsgType::MsgOsdPing =>{
+            chain!(cursor,
+                ping: call!(CephOsdPing::read_from_wire),
+                || {
+                    let mut v:Vec<Message> = Vec::new();
+                    v.push(Message::OsdPing(ping));
+                    v
+                }
+            )
+        },
+        &CephMsgType::MsgMonSubscribe =>{
+            chain!(cursor,
+                subscription: call!(MonitorSubscribe::read_from_wire),
+                || {
+                    let mut v:Vec<Message> = Vec::new();
+                    v.push(Message::MonitorSubscribe(subscription));
+                    v
+                }
+            )
+        },_ => {
+            println!("unknown msg_type: {:?}, {:?}", msg_type, cursor);
             let mut v:Vec<Message> = Vec::new();
             v.push(Message::Nop);
             Done(&cursor[..], v)
@@ -1850,6 +1912,252 @@ impl<'a> CephPrimitive<'a> for CephOsdRedirect<'a>{
         return Ok(buffer);
     }
 }
+
+// compound rados version type
+#[derive(Debug,Eq,PartialEq)]
+pub struct Eversion{
+    pub version: u64,
+    pub epoch: u64,
+    pub padding: u32,
+}
+
+impl<'a> CephPrimitive<'a> for Eversion{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            version: le_u64 ~
+            epoch: le_u64 ~
+            padding: le_u32,
+            ||{
+                Eversion{
+                    version: version,
+                    epoch: epoch,
+                    padding: padding,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        try!(buffer.write_u64::<LittleEndian>(self.version));
+        try!(buffer.write_u64::<LittleEndian>(self.epoch));
+        try!(buffer.write_u32::<LittleEndian>(self.padding));
+
+        return Ok(buffer);
+    }
+}
+/**
+* pg_history_t - information about recent pg peering/mapping history
+*
+* This is aggressively shared between OSDs to bound the amount of past
+* history they need to worry about.
+*/
+#[derive(Debug,Eq,PartialEq)]
+pub struct PgHistory{
+    pub epoch_created: u32,       // epoch in which PG was created
+    pub last_epoch_started: u32,  // lower bound on last epoch started (anywhere, not necessarily locally)
+    pub last_epoch_clean: u32,    // lower bound on last epoch the PG was completely clean.
+    pub last_epoch_split: u32,    // as parent
+    pub last_epoch_marked_full: u32,  // pool or cluster
+    /**
+    * In the event of a map discontinuity, same_*_since may reflect the first
+    * map the osd has seen in the new map sequence rather than the actual start
+    * of the interval.  This is ok since a discontinuity at epoch e means there
+    * must have been a clean interval between e and now and that we cannot be
+    * in the active set during the interval containing e.
+    */
+    pub same_up_since: u32,       // same acting set since
+    pub same_interval_since: u32, // same acting AND up set since
+    pub same_primary_since: u32,  // same primary at least back through this epoch.
+
+    pub last_scrub: Eversion,
+    pub last_deep_scrub: Eversion,
+    pub last_scrub_stamp: Utime,
+    pub last_deep_scrub_stamp: Utime,
+    pub last_clean_scrub_stamp: Utime,
+}
+
+impl<'a> CephPrimitive<'a> for PgHistory{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            epoch_created: le_u32 ~
+            last_epoch_started: le_u32 ~
+            last_epoch_clean: le_u32 ~
+            last_epoch_split: le_u32 ~
+            last_epoch_marked_full: le_u32 ~
+            same_up_since: le_u32 ~
+            same_interval_since: le_u32 ~
+            same_primary_since: le_u32 ~
+
+            last_scrub: call!(Eversion::read_from_wire) ~
+            last_deep_scrub: call!(Eversion::read_from_wire) ~
+
+            last_scrub_stamp: call!(Utime::read_from_wire) ~
+            last_deep_scrub_stamp: call!(Utime::read_from_wire) ~
+            last_clean_scrub_stamp: call!(Utime::read_from_wire),
+            ||{
+                PgHistory{
+                    epoch_created: epoch_created,
+                    last_epoch_started: last_epoch_started,
+                    last_epoch_clean: last_epoch_clean,
+                    last_epoch_split: last_epoch_split,
+                    last_epoch_marked_full: last_epoch_marked_full,
+                    same_up_since: same_up_since,
+                    same_interval_since: same_interval_since,
+                    same_primary_since: same_primary_since,
+                    last_scrub: last_scrub,
+                    last_deep_scrub: last_deep_scrub,
+                    last_scrub_stamp: last_scrub_stamp,
+                    last_deep_scrub_stamp: last_deep_scrub_stamp,
+                    last_clean_scrub_stamp: last_clean_scrub_stamp,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        try!(buffer.write_u32::<LittleEndian>(self.epoch_created));
+        try!(buffer.write_u32::<LittleEndian>(self.last_epoch_started));
+        try!(buffer.write_u32::<LittleEndian>(self.last_epoch_split));
+        try!(buffer.write_u32::<LittleEndian>(self.last_epoch_marked_full));
+        try!(buffer.write_u32::<LittleEndian>(self.same_up_since));
+        try!(buffer.write_u32::<LittleEndian>(self.same_interval_since));
+        try!(buffer.write_u32::<LittleEndian>(self.same_primary_since));
+
+        buffer.extend(try!(self.last_scrub.write_to_wire()));
+        buffer.extend(try!(self.last_deep_scrub.write_to_wire()));
+        buffer.extend(try!(self.last_scrub_stamp.write_to_wire()));
+        buffer.extend(try!(self.last_deep_scrub_stamp.write_to_wire()));
+        buffer.extend(try!(self.last_clean_scrub_stamp.write_to_wire()));
+
+        return Ok(buffer);
+    }
+}
+
+
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct PgQuery{
+    pub query_type: PgQueryProtocol,
+    pub since: Eversion,
+    pub history: PgHistory,
+    pub epoch_sent: u32,
+    pub shard_to: i8,
+    pub shard_from: i8,
+}
+
+impl<'a> CephPrimitive<'a> for PgQuery{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            query_type_bits: le_i32 ~
+            query_type: expr_opt!(PgQueryProtocol::from_i32(query_type_bits)) ~
+            since: call!(Eversion::read_from_wire) ~
+            history: call!(PgHistory::read_from_wire) ~
+            epoch_sent: le_u32 ~
+            shard_to: le_i8 ~
+            shard_from: le_i8 ,
+            ||{
+                PgQuery{
+                    query_type: query_type,
+                    since: since,
+                    history: history,
+                    epoch_sent: epoch_sent,
+                    shard_to: shard_to,
+                    shard_from: shard_from,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        try!(buffer.write_i32::<LittleEndian>(self.query_type.clone() as i32));
+        buffer.extend(try!(self.since.write_to_wire()));
+        buffer.extend(try!(self.history.write_to_wire()));
+        try!(buffer.write_u32::<LittleEndian>(self.epoch_sent));
+        try!(buffer.write_i8(self.shard_to));
+        try!(buffer.write_i8(self.shard_from));
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct CephOsdPgQuery{
+ pub epoch: u64,
+ pub pg_list: Vec<(PlacementGroup, PgQuery)>,
+ pub shards: Vec<i8>, //Can we drop this vec?
+}
+
+impl<'a> CephPrimitive<'a> for CephOsdPgQuery{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            epoch: le_u64 ~
+            pg_list_length: le_u32,
+            ||{
+                println!("pg_list_length: {}", pg_list_length);
+                CephOsdPgQuery{
+                    epoch: epoch,
+                    pg_list: vec![],
+                    shards: vec![],
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[test]
+fn test_osd_pg_query(){
+    let bytes = vec![
+        14, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 52, 0, 0, 0, 255, 255,
+        255, 255, 3, 2, 104, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 4, 76, 0,
+        0, 0, 1, 0, 0, 0, 13, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 12, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 197, 250, 89, 86, 120, 214, 240, 16, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 197, 250, 89, 86, 120, 214, 240, 16, 0, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0,
+        0, 255, 255, 1, 1, 0, 0, 0, 0, 0, 0, 0, 53, 0, 0, 0, 255, 255, 255, 255, 3, 2, 104, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 4, 76, 0, 0, 0, 1, 0, 0, 0, 13, 0, 0,
+        0, 13, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 197, 250, 89, 86, 40, 194, 184, 17, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 197,
+        250, 89, 86, 40, 194, 184, 17, 0, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 255, 255, 1, 1, 0, 0,
+        0, 0, 0, 0, 0, 54, 0, 0, 0, 255, 255, 255, 255, 3, 2, 104, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 6, 4, 76, 0, 0, 0, 1, 0, 0, 0, 13, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0,
+        0, 14, 0, 0, 0, 14, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 197, 250, 89,
+        86, 72, 166, 29, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 197, 250, 89, 86, 72, 166, 29, 18,
+        0, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 255, 255, 1, 1, 0, 0, 0, 0, 0, 0, 0, 56, 0, 0, 0, 255,
+        255, 255, 255, 3, 2, 104, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 4,
+        76, 0, 0, 0, 1, 0, 0, 0, 13, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0,
+        12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 197, 250, 89, 86, 136, 166, 31, 22, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 197, 250, 89, 86, 136, 166, 31, 22, 0, 0, 0, 0, 0, 0, 0, 0,
+        14, 0, 0, 0, 255, 255, 1, 2, 0, 0, 0, 0, 0, 0, 0, 49, 0, 0, 0, 255, 255, 255, 255, 3, 2,
+        104, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 4, 76, 0, 0, 0, 1, 0, 0,
+        0, 13, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 197, 250, 89, 86, 120, 225, 49, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 197, 250, 89, 86, 120, 225, 49, 51, 0, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 255, 255, 1,
+        2, 0, 0, 0, 0, 0, 0, 0, 52, 0, 0, 0, 255, 255, 255, 255, 3, 2, 104, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 4, 76, 0, 0, 0, 1, 0, 0, 0, 13, 0, 0, 0, 13, 0, 0, 0,
+        0, 0, 0, 0, 14, 0, 0, 0, 14, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 197,
+        250, 89, 86, 176, 225, 97, 52, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 197, 250, 89, 86, 176,
+        225, 97, 52, 0, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 255, 255, 6, 0, 0, 0, 255, 255, 255, 255,
+        255, 255, 100, 22, 50, 160, 0, 0, 0, 0, 0, 0, 0, 0, 194, 40, 168, 45, 235, 18, 188, 146, 5
+    ];
+    let x: &[u8] = &[];
+    //let expected_result = CephOsdPgQuery {
+    //     };
+    let result = CephOsdPgQuery::read_from_wire(&bytes);
+    println!("CephOsdPgQuery parse result: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
+}
+
 #[test]
 fn test_osd_operation_reply(){
     let bytes = vec![
@@ -2137,6 +2445,83 @@ impl<'a> CephPrimitive<'a> for CephOsdOperation<'a>{
         return Ok(buffer);
     }
 }
+
+#[test]
+fn test_osd_ping(){
+    let bytes: &[u8] = &[
+        75, 206, 137, 160, 150, 2, 17, 229, 181, 78, 2, 119, 199, 110, 141, 19,  //uuid
+        7, 0, 0, 0, //map epoch
+        0, 0, 0, 0, //peer epoch
+        4, //Ping Type 4== Ping
+        1, 1, 8, 0, 0, 0, 0, 0, //Peer stat timestamp
+        0, 0, 0, 0, 0, 0, 32, 255,  //Ping Time ?
+        89, 86, 32, 26, 233, 39, 104, //Footer stuff maybe?
+        164, 191, 234, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    ];
+    let x: &[u8] = &[89, 86, 32, 26, 233, 39, 104, 164, 191, 234, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 1];
+    let expected_result = CephOsdPing {
+        fsid: Uuid::parse_str("4bce89a0-9602-11e5-b54e-0277c76e8d13").unwrap(),
+        map_epoch: 7,
+        peer_epoch: 0,
+        op: OsdPingProtocol::Ping,
+        osd_peer_timestamp: Utime {
+            tv_sec: 524545,
+            tv_nsec: 0 },
+        timestamp: Utime { tv_sec: 0, tv_nsec: 4280287232 }
+    };
+    let result = CephOsdPing::read_from_wire(&bytes);
+    assert_eq!(Done(x, expected_result), result);
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct CephOsdPing{
+ pub fsid: Uuid,
+ pub map_epoch: u32,
+ pub peer_epoch: u32,
+ pub op: OsdPingProtocol,
+ pub osd_peer_timestamp: Utime,
+ pub timestamp: Utime,
+}
+
+impl<'a> CephPrimitive<'a> for CephOsdPing{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            fsid_bytes: take!(16) ~
+            fsid: expr_opt!(Uuid::from_bytes(fsid_bytes)) ~
+            map_epoch: le_u32 ~
+            peer_epoch: le_u32 ~
+            ping_type_bits: le_u8 ~
+            ping_type: expr_opt!(OsdPingProtocol::from_u8(ping_type_bits)) ~
+            osd_peer_timestamp: call!(Utime::read_from_wire) ~
+            timestamp: call!(Utime::read_from_wire),
+            ||{
+                CephOsdPing{
+                    fsid: fsid,
+                    map_epoch: map_epoch,
+                    peer_epoch: peer_epoch,
+                    op: ping_type,
+                    osd_peer_timestamp: osd_peer_timestamp,
+                    timestamp: timestamp,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer: Vec<u8> = Vec::new();
+
+        buffer.extend(self.fsid.as_bytes());
+        try!(buffer.write_u32::<LittleEndian>(self.map_epoch));
+        try!(buffer.write_u32::<LittleEndian>(self.peer_epoch));
+        try!(buffer.write_u8(self.op.clone() as u8));
+        buffer.extend(try!(self.osd_peer_timestamp.write_to_wire()));
+        buffer.extend(try!(self.timestamp.write_to_wire()));
+
+        return Ok(buffer);
+    }
+}
+
 
 //OSD <-> OSD operations
 /*

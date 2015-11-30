@@ -37,6 +37,7 @@ mod tests{
     use std::path::Path;
     use pcap::{Capture, Device};
     use log;
+    use nom;
     use output_args::*;
     use super::serial;
 
@@ -57,7 +58,7 @@ mod tests{
             match serial::parse_ceph_packet(&packet.data) {
                 nom::IResult::Done(_, result) => {
                     println!("logging {:?}", result);
-                    let _ = process_packet(&result.header, &result.ceph_message, &args);
+                    // let _ = super::process_packet(&result.header, &result.ceph_message, &args);
                 },
                 nom::IResult::Incomplete(i) => println!("Incomplete: {:?}: {:?}", i, packet),
                 nom::IResult::Error(e) => println!("Error parsing; {:?}", e),

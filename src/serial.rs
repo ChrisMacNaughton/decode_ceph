@@ -540,23 +540,42 @@ fn test_ceph_connect_reply(){
         0x01,0xff,0xff,0xff,0xff,0xff,0x2f,0x00,0x00,0x08,0x00,0x00,0x00,0x01,0x00,0x00,
         0x00,0x0f,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01
     ];
-    /*
+    let x: &[u8] = &[];
     let expected_result = CephMsgConnectReply {
         tag: CephMsg::Ready,
-        features: CephFeatures::CEPH_ALL,
+        features: CEPH_FEATURE_UID | CEPH_FEATURE_NOSRCADDR | CEPH_FEATURE_MONCLOCKCHECK |
+                  CEPH_FEATURE_FLOCK | CEPH_FEATURE_SUBSCRIBE2 | CEPH_FEATURE_MONNAME |
+                  CEPH_FEATURE_RECONNECT_SEQ | CEPH_FEATURE_DIRLAYOUTHASH |
+                  CEPH_FEATURE_OBJECTLOCATOR | CEPH_FEATURE_PGID64 | CEPH_FEATURE_INCSUBOSDMAP |
+                  CEPH_FEATURE_PGPOOL3 | CEPH_FEATURE_OSDREPLYMUX | CEPH_FEATURE_OSDENC |
+                  CEPH_FEATURE_OMAP | CEPH_FEATURE_QUERY_T | CEPH_FEATURE_MONENC |
+                  CEPH_FEATURE_INDEP_PG_MAP | CEPH_FEATURE_CRUSH_TUNABLES |
+                  CEPH_FEATURE_CHUNKY_SCRUB | CEPH_FEATURE_MON_NULLROUTE | CEPH_FEATURE_MON_GV |
+                  CEPH_FEATURE_BACKFILL_RESERVATION | CEPH_FEATURE_MSG_AUTH |
+                  CEPH_FEATURE_RECOVERY_RESERVATION | CEPH_FEATURE_CRUSH_TUNABLES1 |
+                  CEPH_FEATURE_CREATEPOOLID | CEPH_FEATURE_REPLY_CREATE_INODE |
+                  CEPH_FEATURE_OSD_HBMSGS | CEPH_FEATURE_MDSENC | CEPH_FEATURE_OSDHASHPSPOOL |
+                  CEPH_FEATURE_MON_SINGLE_PAXOS | CEPH_FEATURE_OSD_SNAPMAPPER |
+                  CEPH_FEATURE_MON_SCRUB | CEPH_FEATURE_OSD_PACKED_RECOVERY |
+                  CEPH_FEATURE_OSD_CACHEPOOL | CEPH_FEATURE_CRUSH_V2 | CEPH_FEATURE_EXPORT_PEER |
+                  CEPH_FEATURE_OSD_ERASURE_CODES | CEPH_FEATURE_OSDMAP_ENC |
+                  CEPH_FEATURE_MDS_INLINE_DATA | CEPH_FEATURE_CRUSH_TUNABLES3 |
+                  CEPH_FEATURE_OSD_PRIMARY_AFFINITY | CEPH_FEATURE_MSGR_KEEPALIVE2 |
+                  CEPH_FEATURE_OSD_POOLRESEND | CEPH_FEATURE_OSD_SET_ALLOC_HINT |
+                  CEPH_CLIENT_DEFAULT,
         global_seq: 8,
         connect_seq: 1,
-        protocol_version: Protocol::Unknown,
+        protocol_version: Protocol::MonProtocol,
         authorizer_len: 0,
-        flags: 0,
+        flags: 1,
         authorizer: vec![],
     };
-    */
     let result = CephMsgConnectReply::read_from_wire(&bytes);
-    println!("CephMsgConnectReply parse result: {:?}", result);
+    println!("ceph_connect_reply: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct CephMsgConnectReply{
     pub tag: CephMsg,
     pub features: CephFeatures,
@@ -712,7 +731,7 @@ enum Crypto {
 
 enum_from_primitive!{
 #[repr(u32)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Protocol{
     OsdProtocol = 24, /*server/client*/
     MdsProtocol = 32, /*server/client*/
@@ -1603,7 +1622,6 @@ pub struct Monitor<'a>{
 
 impl<'a> CephPrimitive<'a> for Monitor<'a>{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
-        // println!("Monitor land");
         chain!(input,
             name: parse_str ~
             entity_addr: call!(EntityAddr::read_from_wire),

@@ -1010,24 +1010,6 @@ pub enum Message<'a>{
     Nop,
 }
 
-
-// pub struct CephMessageWithHeader<'a> {
-//     pub header: Option<&'a PacketHeader>,
-//     pub message: Option<&'a CephMsgrMsg<'a> >,
-// }
-
-// pub fn process_input<'a>(input: &'a [u8] ) -> Result<CephMessageWithHeader, SerialError> {
-//     Ok(CephMessageWithHeader {
-//         header: match PacketHeader::read_from_wire(input) {
-//             nom::IResult::Done(_, ref header) => Some(header),
-//             _ => None,
-//         },
-//         message: match CephMsgrMsg::read_from_wire(input) {
-//             nom::IResult::Done(_, ref ceph) => Some(ceph),
-//             _ => None,
-//         }
-//     })
-// }
 #[derive(Debug)]
 pub struct CephMessageWithHeader<'a> {
     pub header: PacketHeader,
@@ -1114,8 +1096,6 @@ pub enum IPVersion {
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct PacketHeader {
-    // pub source_mac: MacAddress<'a>,
-    // pub dest_mac: MacAddress<'a>,
     version: IPVersion,
     pub src_v4addr: Option<Ipv4Addr>,
     pub dst_v4addr: Option<Ipv4Addr>,
@@ -1128,23 +1108,13 @@ pub struct PacketHeader {
 
 named!(pub packet_header <&[u8], PacketHeader>,
     chain!(
-        // mac_address ~
-        // mac_address ~
         take!(14) ~
         version: take!(1) ~
         take!(13) ~
         source_address: ipv4_parser ~
         dest_address: ipv4_parser ~
-        // service_field: le_u8 ~
-        // take!(129) ~
         source_port: be_u16 ~
         dst_port: be_u16,
-        // sequence_number: take!(4) ~
-        // acknowledgement_number: take!(4) ~
-        // header_length: take~(1) ~
-        // flags: take!(2),
-        // take!(28),
-
     ||{
         PacketHeader {
             version: match version[0] {
@@ -1161,13 +1131,6 @@ named!(pub packet_header <&[u8], PacketHeader>,
     }
     )
 );
-
-// named!(ceph_packet <&[u8], )
-// impl <'a> PacketHeader{
-//     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
-//         unimplemented!();
-//     }
-// }
 
 //Decode the msg from the wire and return the correct variant
 fn read_messages_from_wire<'a>(cursor: &'a [u8], msg_type: &CephMsgType) -> nom::IResult<&'a [u8], Vec<Message<'a>>>{

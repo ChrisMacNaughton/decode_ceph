@@ -13,15 +13,11 @@ extern crate time;
 extern crate influent;
 
 mod serial;
-// use serial::{CephPrimitive};
 mod crypto;
 
-// use byteorder::{BigEndian, ReadBytesExt};
 use pcap::{Capture, Device};
 
-// use std::io::Cursor;
 use std::io::prelude::*;
-// use std::net::{Ipv4Addr, Ipv6Addr, TcpStream};
 use std::net::TcpStream;
 use std::str::FromStr;
 
@@ -58,26 +54,6 @@ mod tests{
         //Set the cursor so the parsing doesn't fail
         let mut cap = Capture::from_file(Path::new("ceph.pcap")).unwrap();
         while let Some(packet) = cap.next() {
-            //We received a packet
-            // let data = packet.data;
-            // let mut cursor = Cursor::new(&data[..]);
-
-            // //Try to parse the packet headers, src, dst and ports
-            // cursor.set_position(12);
-            // match super::parse_etherframe(&mut cursor){
-            //     //The packet parsing was clean
-            //     Ok(header) => {
-            //         //Try to parse some Ceph info from the packet
-            //         let position = cursor.position() as usize;
-            //         let result = super::dissect_msgr(header, &args, &cursor.get_ref()[position..]);
-            //         //let print_result = super::process_packet(header, &dissect_result, &args);
-            //         println!("Processed packet: {:?}", result);
-            //     }
-            //     //The packet parsing failed
-            //     Err(err) => {
-            //         //println!("Invalid etherframe: {:?}", err)
-            //     }
-            // };
             match serial::parse_ceph_packet(&packet.data) {
                 nom::IResult::Done(_, result) => {
                     println!("logging {:?}", result);
@@ -171,22 +147,6 @@ fn log_packet_to_carbon(carbon_url: &str, data: String)->Result<(), String>{
 
     return Ok(());
 }
-
-// fn log_packet_to_es(url: &str, json: &String)->Result<(), String>{
-//     debug!("Logging to {}", url);
-//     let parsed_url = try!(ease::Url::parse(url).map_err(|e| e.to_string()));
-//     let mut req = ease::Request::new(parsed_url);
-//     req.body(json.clone());
-//     match req.post(){
-//         Ok(_) => {
-//             info!("Logged to ES");
-//             return Ok(());},
-//         Err(_) => {
-//             error!("ES POST FAILED");
-//             return Err("Post operation failed".to_string());
-//         }
-//     };
-// }
 
 fn parse_carbon_url(url: &String)->Result<(String, u16), String>{
     let parts: Vec<&str> = url.split(":").collect();
@@ -322,30 +282,6 @@ fn process_packet(header: &serial::PacketHeader, msg: &serial::CephMsgrMsg, outp
     Ok(())
 }
 
-//MSGR is Ceph's outer message protocol
-// fn dissect_msgr<'a>(header: &serial::PacketHeader, output_args: &Args, input: &'a [u8])->Result<(), serial::SerialError>{
-//     let result = serial::CephMsgrMsg::read_from_wire(input);
-//     match result{
-//         nom::IResult::Done(ref leftovers, ref ceph) => {
-//                 process_packet(header, ceph, output_args);
-//                 return Ok(());
-//         },
-//         nom::IResult::Error(ref err) => {
-//             return Err(serial::SerialError::InvalidValue);
-//         },
-//         nom::IResult::Incomplete(ref needed) => {
-//             match needed{
-//                 &nom::Needed::Unknown =>{
-//                     return Err(serial::SerialError::InvalidValue);
-//                 }
-//                 &nom::Needed::Size(ref size) =>{
-//                     return Err(serial::SerialError::InvalidValue);
-//                 }
-//             }
-//         },
-//     }
-// }
-
 fn main() {
     let args = get_arguments();
     //TODO make configurable via cli or config arg
@@ -384,19 +320,6 @@ fn main() {
                           .timeout(100)
                           .open() //activate the handle
                           .unwrap(); //assume activation worked
-            // let link_list = cap.list_datalinks().unwrap();
-            //Try to detect "cooked" headers and set the cursor position properly
-            // for link_type in link_list{
-            //     info!("Device datalink({}): {:?}", &device_name, &link_type.get_name());
-            //     match link_type{
-            //         //LINUX_SLL
-            //         pcap::Linktype(113) => {
-            //             cooked_header = true;
-            //         },
-            //         //Anything else
-            //         _ => {},
-            //     }
-            // }
 
             info!("Setting up filter({})", &device_name);
             //Grab both monitor and OSD traffic
@@ -422,10 +345,7 @@ fn main() {
                                 trace!("logging {:?}", result);
                                 let _ = process_packet(&result.header, &result.ceph_message, &args);
                             },
-                            // nom::IResult::Incomplete(i) => trace!("Incomplete: {:?}: {:?}", i, packet),
                             _ => {}
-                            // nom::IResult::Error(e) => trace!("Error parsing; {:?}", e),
-                            // _ => trace!("Error while parsing packet")
                         };
                         // break
                     },

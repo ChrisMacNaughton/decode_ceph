@@ -4,7 +4,6 @@
 #[macro_use] extern crate nom;
 #[macro_use] extern crate log;
 extern crate byteorder;
-extern crate ease;
 extern crate num;
 extern crate output_args;
 extern crate pcap;
@@ -14,7 +13,7 @@ extern crate time;
 extern crate influent;
 
 mod serial;
-use serial::{CephPrimitive};
+// use serial::{CephPrimitive};
 mod crypto;
 
 // use byteorder::{BigEndian, ReadBytesExt};
@@ -137,38 +136,6 @@ impl<'a> Document<'a>{
 
         return Ok(carbon_string);
     }
-    fn to_json(&self)->Result<String, String>{
-
-        let src_addr: String = match self.header.src_v4addr{
-            Some(addr) => addr.to_string(),
-            None => {
-                match self.header.src_v6addr{
-                    Some(addr) => addr.to_string(),
-                    None => "".to_string(),
-                }
-            },
-        };
-
-        let dst_addr: String = match self.header.dst_v4addr{
-            Some(addr) => addr.to_string(),
-            None => {
-                match self.header.dst_v6addr{
-                    Some(addr) => addr.to_string(),
-                    None => "".to_string(),
-                }
-            },
-        };
-
-
-        return Ok(format!("{{\"src_ip\": \"{}\",\"dst_ip\": \"{}\", \"operation\":\"{:?}\", \
-            \"operation_count\":{}, \"size\":{}, \"postDate\":\"{}\"}}",
-            src_addr,
-            dst_addr,
-            self.flags,
-            self.operation_count,
-            self.size,
-            self.timestamp));
-    }
 }
 
 fn get_arguments() -> output_args::Args {
@@ -205,21 +172,21 @@ fn log_packet_to_carbon(carbon_url: &str, data: String)->Result<(), String>{
     return Ok(());
 }
 
-fn log_packet_to_es(url: &str, json: &String)->Result<(), String>{
-    debug!("Logging to {}", url);
-    let parsed_url = try!(ease::Url::parse(url).map_err(|e| e.to_string()));
-    let mut req = ease::Request::new(parsed_url);
-    req.body(json.clone());
-    match req.post(){
-        Ok(_) => {
-            info!("Logged to ES");
-            return Ok(());},
-        Err(_) => {
-            error!("ES POST FAILED");
-            return Err("Post operation failed".to_string());
-        }
-    };
-}
+// fn log_packet_to_es(url: &str, json: &String)->Result<(), String>{
+//     debug!("Logging to {}", url);
+//     let parsed_url = try!(ease::Url::parse(url).map_err(|e| e.to_string()));
+//     let mut req = ease::Request::new(parsed_url);
+//     req.body(json.clone());
+//     match req.post(){
+//         Ok(_) => {
+//             info!("Logged to ES");
+//             return Ok(());},
+//         Err(_) => {
+//             error!("ES POST FAILED");
+//             return Err("Post operation failed".to_string());
+//         }
+//     };
+// }
 
 fn parse_carbon_url(url: &String)->Result<(String, u16), String>{
     let parts: Vec<&str> = url.split(":").collect();
@@ -257,29 +224,6 @@ fn log_msg_to_carbon(header: &serial::PacketHeader, msg: &serial::Message, outpu
         };
         let carbon_data = format!("{}.{}", carbon_root_key, try!(doc.to_carbon_string(&carbon.root_key)));
         try!(log_packet_to_carbon(&carbon_url, carbon_data));
-    }
-    Ok(())
-}
-
-fn log_msg_to_elasticsearch(header: &serial::PacketHeader, msg: &serial::Message, output_args: &Args)->Result<(),String>{
-    if output_args.elasticsearch.is_some() && output_args.outputs.contains(&"elasticsearch".to_string()){
-        let op = match *msg{
-            serial::Message::OsdOp(ref osd_op) => osd_op,
-            serial::Message::OsdSubop(ref sub_op) => sub_op,
-            _ => return Err("Bad type".to_string())
-        };
-        let milliseconds_since_epoch = get_time();
-        let doc = Document{
-            header: header,
-            flags: op.flags,
-            operation_count: op.operation_count,
-            size: op.operation.payload_size,
-            timestamp: milliseconds_since_epoch,
-        };
-        let doc_json = try!(doc.to_json());
-        //It's ok to unwrap here because we checked is_some() above
-        // try!(log_packet_to_es("http://10.0.3.144:9200/ceph/operations", &doc_json));
-        try!(log_packet_to_es(&output_args.elasticsearch.clone().unwrap(), &doc_json));
     }
     Ok(())
 }
@@ -372,7 +316,6 @@ fn process_packet(header: &serial::PacketHeader, msg: &serial::CephMsgrMsg, outp
     //Process OSD operation packets
     for ceph_msg in msg.messages.iter(){
         let _ = log_msg_to_carbon(&header, &ceph_msg, output_args);
-        let _ = log_msg_to_elasticsearch(&header, &ceph_msg, output_args);
         let _ = log_msg_to_stdout(&header, &ceph_msg, output_args);
         let _ = log_msg_to_influx(&header, &ceph_msg, output_args);
     }

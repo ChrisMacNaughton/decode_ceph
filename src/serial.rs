@@ -317,7 +317,7 @@ mod tests{
     #[test]
     fn test_parse_ceph_packet() {
         let mut v4_packet = [
-            0x00, 0x16, 0x3e, 0xf5, 0x8e, 0xa6, 0x00, 0x16, 0x3e, 0x39, 0x19, 0x29, 0x08, 0x00, 0x45, 0x00,
+            0x00, 0x00, 0x00, 0x16, 0x3e, 0xf5, 0x8e, 0xa6, 0x00, 0x16, 0x3e, 0x39, 0x19, 0x29, 0x08, 0x00, 0x45, 0x00,
             0x01, 0x2b, 0x9a, 0xdd, 0x40, 0x00, 0x40, 0x06, 0x83, 0x5b, 0x0a, 0x00, 0x03, 0xf9, 0x0a, 0x00,
             0x03, 0x9c, 0xb2, 0xa4, 0x1a, 0x90, 0x7b, 0xfa, 0xe7, 0xef, 0xd4, 0xee, 0x3c, 0xac, 0x80, 0x18,
             0x00, 0xed, 0x1c, 0xb2, 0x00, 0x00, 0x01, 0x01, 0x08, 0x0a, 0x00, 0x06, 0x7c, 0x58, 0x00, 0x06,
@@ -1030,7 +1030,7 @@ pub enum Message<'a>{
 // }
 #[derive(Debug)]
 pub struct CephMessageWithHeader<'a> {
-    pub header: PacketHeader<'a>,
+    pub header: PacketHeader,
     pub ceph_message: CephMsgrMsg<'a>,
 }
 
@@ -1113,9 +1113,9 @@ pub enum IPVersion {
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct PacketHeader<'a> {
-    pub source_mac: MacAddress<'a>,
-    pub dest_mac: MacAddress<'a>,
+pub struct PacketHeader {
+    // pub source_mac: MacAddress<'a>,
+    // pub dest_mac: MacAddress<'a>,
     version: IPVersion,
     pub src_v4addr: Option<Ipv4Addr>,
     pub dst_v4addr: Option<Ipv4Addr>,
@@ -1126,10 +1126,11 @@ pub struct PacketHeader<'a> {
     pub dst_port: u16,
 }
 
-named!(packet_header <&[u8], PacketHeader>,
+named!(pub packet_header <&[u8], PacketHeader>,
     chain!(
-        dst: mac_address ~
-        src: mac_address ~
+        // mac_address ~
+        // mac_address ~
+        take!(14) ~
         version: take!(1) ~
         take!(13) ~
         source_address: ipv4_parser ~
@@ -1146,15 +1147,14 @@ named!(packet_header <&[u8], PacketHeader>,
 
     ||{
         PacketHeader {
-            source_mac: src,
-            dest_mac: dst,
-            // version: version
             version: match version[0] {
                 0x08 => IPVersion::IPV4,
                 _ => IPVersion::IPV6
             },
             src_v4addr: Some(source_address),
             dst_v4addr: Some(dest_address),
+            src_v6addr: None,
+            dst_v6addr: None,
             source_port: source_port,
             dst_port: dst_port,
         }

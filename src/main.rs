@@ -217,8 +217,8 @@ fn log_msg_to_influx(header: &serial::PacketHeader, msg: &serial::Message, outpu
 
         let dst_addr = header.dst_addr.ip_address();
 
-        let size = op.operation.payload_size as f64;
-        let count = op.operation_count as i64;
+        // let size = op.operation.payload_size as f64;
+        // let count = op.operation_count as i64;
         let flags: String = format!("{:?}", op.flags).clone();
         let mut measurement = Measurement::new("ceph");
 
@@ -232,9 +232,9 @@ fn log_msg_to_influx(header: &serial::PacketHeader, msg: &serial::Message, outpu
         measurement.add_tag("src_address", src_addr.as_ref());
         measurement.add_tag("dst_address", dst_addr.as_ref());
 
-        measurement.add_field("size", Value::Float(size));
+        measurement.add_field("size", Value::Float(op.operation.payload_size as f64));
         measurement.add_field("operation", Value::String(flags.as_ref()));
-        measurement.add_field("count", Value::Integer(count));
+        measurement.add_field("count", Value::Integer(op.operation_count as i64));
 
         let res = client.write_one(measurement, None);
         debug!("{:?}", res);
@@ -293,7 +293,7 @@ fn main() {
 
             info!("Setting up filter({})", &device_name);
             //Grab both monitor and OSD traffic
-            match cap.filter("tcp portrange 6789-7300"){
+            match cap.filter("tcp dst portrange 6789-7300"){
                 Ok(_) => {
                     info!("Filter successful({})", &device_name);
                 },

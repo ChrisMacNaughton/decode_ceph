@@ -32,26 +32,26 @@ mod tests{
     extern crate output_args;
     extern crate pcap;
 
-    use std::io::Cursor;
-    use std::net::Ipv4Addr;
+    // use std::io::Cursor;
+    // use std::net::Ipv4Addr;
     use std::path::Path;
-    use pcap::{Capture, Device};
-    use log;
+    use pcap::Capture;
+    // use log;
     use nom;
-    use output_args::*;
+    // use output_args::*;
     use super::serial;
 
     #[test]
     fn test_pcap_parsing(){
-        let args = output_args::Args {
-            carbon: None,
-            elasticsearch: None,
-            stdout: Some("stdout".to_string()),
-            influx: None,
-            outputs: vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()],
-            config_path: "".to_string(),
-            log_level: log::LogLevel::Info
-        };
+        // let args = output_args::Args {
+        //     carbon: None,
+        //     elasticsearch: None,
+        //     stdout: Some("stdout".to_string()),
+        //     influx: None,
+        //     outputs: vec!["elasticsearch".to_string(), "carbon".to_string(), "stdout".to_string()],
+        //     config_path: "".to_string(),
+        //     log_level: log::LogLevel::Info
+        // };
         //Set the cursor so the parsing doesn't fail
         let mut cap = Capture::from_file(Path::new("ceph.pcap")).unwrap();
         while let Some(packet) = cap.next() {
@@ -82,25 +82,10 @@ struct Document<'a>{
 // JSON value representation
 impl<'a> Document<'a>{
     fn to_carbon_string(&self, root_key: &str)->Result<String, String>{
-        let src_addr: String = match self.header.src_v4addr{
-            Some(addr) => addr.to_string(),
-            None => {
-                match self.header.src_v6addr{
-                    Some(addr) => addr.to_string(),
-                    None => "".to_string(),
-                }
-            },
-        };
+        let src_addr = self.header.src_addr.ip_address();
 
-        let dst_addr: String = match self.header.dst_v4addr{
-            Some(addr) => addr.to_string(),
-            None => {
-                match self.header.dst_v6addr{
-                    Some(addr) => addr.to_string(),
-                    None => "".to_string(),
-                }
-            },
-        };
+        let dst_addr = self.header.dst_addr.ip_address();
+
         //NOTE: carbon uses epoch time aka seconds since epoch not milliseconds
         let carbon_string = format!( r#"
 {root_key}.src_ip {} {timestamp}
@@ -199,8 +184,9 @@ fn log_msg_to_stdout(header: &serial::PacketHeader, msg: &serial::Message, outpu
         let now = time::now();
         let time_spec = now.to_timespec();
         //TODO Expand this
+        let ip = header.src_addr.ip_address();
         println!("{}", format!("ceph.{}.{:?}.{} {}",
-            &header.src_v4addr.unwrap(),
+            ip,
             op.flags,
             op.operation.payload_size,
             time_spec.sec)
@@ -227,27 +213,10 @@ fn log_msg_to_influx(header: &serial::PacketHeader, msg: &serial::Message, outpu
         let hosts = vec![host.as_ref()];
         let client = create_client(credentials, hosts);
 
+        let src_addr = header.src_addr.ip_address();
 
+        let dst_addr = header.dst_addr.ip_address();
 
-        let src_addr: String = match header.src_v4addr{
-            Some(addr) => addr.to_string(),
-            None => {
-                match header.src_v6addr{
-                    Some(addr) => addr.to_string(),
-                    None => "".to_string(),
-                }
-            },
-        };
-
-        let dst_addr: String = match header.dst_v4addr{
-            Some(addr) => addr.to_string(),
-            None => {
-                match header.dst_v6addr{
-                    Some(addr) => addr.to_string(),
-                    None => "".to_string(),
-                }
-            },
-        };
         let size = op.operation.payload_size as f64;
         let count = op.operation_count as i64;
         let flags: String = format!("{:?}", op.flags).clone();

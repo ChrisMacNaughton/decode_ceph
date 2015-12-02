@@ -1196,33 +1196,12 @@ named!(pub packet_header <&[u8], PacketHeader>,
     chain!(
         take!(14) ~
         version: take!(2) ~
-        // take!(12) ~
         call!(version_padding, version[0]) ~
-        // if version == IPVersion::IPV4 {
-        //     source_address: ipv4_parser ~
-        //     dest_address: ipv4_parser ~
-        // } else {
-        //     source_address: ipv6_parser ~
-        //     dest_address: ipv6_parser ~
-        // }
         src_addr: call!(parse_ip, version[0]) ~
         dst_addr: call!(parse_ip, version[0]) ~
         source_port: be_u16 ~
         dst_port: be_u16,
     ||{
-        // let src_v6 = None;
-        // let dst_v6 = None;
-        // if version == IPVersion::IPV4 {
-        //     src_v4 = Some(source_address);
-        //     dest_v4 = Some(source_address);
-        //     src_v6 = None;
-        //     dst_v6 = None;
-        // } else {
-        //     src_v6 = Some(source_address);
-        //     dest_v6 = Some(source_address);
-        //     src_v4 = None;
-        //     dst_v4 = None;
-        // }
         PacketHeader {
             version: match version[0] {
                 0x08 => IPVersion::IPV4,

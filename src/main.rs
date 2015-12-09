@@ -14,6 +14,9 @@ extern crate influent;
 
 mod serial;
 mod crypto;
+mod mon_decode;
+mod common_decode;
+mod osd_decode;
 
 use pcap::{Capture, Device};
 
@@ -164,7 +167,8 @@ fn log_msg_to_carbon(header: &serial::PacketHeader, msg: &serial::Message, outpu
     if output_args.carbon.is_some(){
         let op = match *msg{
             serial::Message::OsdOp(ref osd_op) => osd_op,
-            serial::Message::OsdSubop(ref sub_op) => sub_op,
+            //TODO: What should we do here?
+            //serial::Message::OsdSubop(ref sub_op) => sub_op,
             _ => return Err("Bad type".to_string())
         };
 
@@ -193,7 +197,7 @@ fn log_msg_to_stdout(header: &serial::PacketHeader, msg: &serial::Message, outpu
     if output_args.stdout.is_some(){
         let op = match *msg{
             serial::Message::OsdOp(ref osd_op) => osd_op,
-            serial::Message::OsdSubop(ref sub_op) => sub_op,
+            //serial::Message::OsdSubop(ref sub_op) => sub_op,
             _ => return Err("Bad type".to_string())
         };
         let now = time::now();
@@ -213,7 +217,7 @@ fn log_msg_to_influx(header: &serial::PacketHeader, msg: &serial::Message, outpu
     if output_args.influx.is_some() && output_args.outputs.contains(&"influx".to_string()) {
         let op = match *msg{
             serial::Message::OsdOp(ref osd_op) => osd_op,
-            serial::Message::OsdSubop(ref sub_op) => sub_op,
+            //serial::Message::OsdSubop(ref sub_op) => sub_op,
             _ => return Err("Bad type".to_string())
         };
 

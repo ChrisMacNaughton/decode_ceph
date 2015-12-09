@@ -4585,7 +4585,7 @@ fn parse_ipv6<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Ipv6Addr> {
     )
 }
 
-fn parse_fsid<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Uuid> {
+pub fn parse_fsid<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Uuid> {
     chain!(i,
         length: le_u32 ~
         s: take_str!(length) ~
@@ -4596,7 +4596,7 @@ fn parse_fsid<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], Uuid> {
     )
 }
 
-fn parse_str<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], &'a str> {
+pub fn parse_str<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], &'a str> {
     chain!(i,
         length: le_u32 ~
         s: take_str!(length),

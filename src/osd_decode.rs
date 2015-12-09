@@ -2,11 +2,10 @@
 extern crate nom;
 extern crate uuid;
 
-use serial;
-
 use self::uuid::{ParseError, Uuid};
 use self::nom::{le_i8, le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16};
 use serial::*;
+use common_decode::{EntityNameT, EversionT};
 
 #[test]
 fn test_ceph_read_osd_reqid_t(){
@@ -32,7 +31,7 @@ fn test_ceph_write_OsdReqidT(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct OsdReqidT{
-	pub name: name,
+	pub name: EntityNameT,
 	pub tid: u64,
 	pub inc: i32,
 }
@@ -40,7 +39,7 @@ pub struct OsdReqidT{
 impl<'a> CephPrimitive<'a> for OsdReqidT{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
-		name: EntityNameT ~
+		name: call!(EntityNameT::read_form_wire) ~
 		tid: le_u64 ~
 		inc: le_i32,
 		||{
@@ -81,7 +80,7 @@ fn test_ceph_write_PoolStatT(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct PoolStatT{
-	pub stats: stats,
+	pub stats: ObjectStatCollectionT,
 	pub log_size: i64,
 	pub ondisk_log_size: i64,
 	pub up: i32,
@@ -91,7 +90,7 @@ pub struct PoolStatT{
 impl<'a> CephPrimitive<'a> for PoolStatT{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
-		stats: ObjectStatCollectionT ~
+		stats: call!(ObjectStatCollectionT::read_from_wire) ~
 		log_size: le_i64 ~
 		ondisk_log_size: le_i64 ~
 		up: le_i32 ~
@@ -128,7 +127,7 @@ impl<'a> CephPrimitive<'a> for pool_snap_info_t{
         ||{
             pool_snap_info_t{
                 snapid_t: snapid_t,
-                utime_t: utime_t,
+                utime_t: utime,
                 name: name,
             }
         }
@@ -385,10 +384,10 @@ fn test_ceph_write_Snapsetcontext(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Snapsetcontext{
-	pub oid: oid,
+	pub oid: HObject,
 	pub snap_ref: i32,
 	pub registered: u8,
-	pub snapset: snapset,
+	pub snapset: SnapSet,
 	pub exists: u8,
 }
 
@@ -407,68 +406,6 @@ impl<'a> CephPrimitive<'a> for Snapsetcontext{
 			registered: registered,
 			snapset: snapset,
 			exists: exists,
-		}
-	})
-}
-	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-		let mut buffer: Vec<u8> = Vec::new();
-		return Ok(buffer);
-	}
-}
-
-#[test]
-fn test_ceph_read_ObjectExtent(){
-	let bytes = vec![
-		//TODO: fill in test data here
-	];
-	let x: &[u8] = &[];
-	let expected_result = "";
-	let result = Objectextent::read_from_wire(&bytes);
-	println!("ceph_connect_reply: {:?}", result);
-	assert_eq!(Done(x, expected_result), result);
-}
-
-#[test]
-fn test_ceph_write_Objectextent(){
-	let expected_bytes = vec![
-		//TODO: fill in result data here
-	];
-	let result = Objectextent::write_to_wire();
-	println!("ceph_write_Objectextent{:?}", result);
-	//assert_eq!(result, expected_bytes);
-}
-
-#[derive(Debug,Eq,PartialEq)]
-pub struct Objectextent{
-	pub oid: &'a str,
-	pub objectno: u64,
-	pub offset: u64,
-	pub length: u64,
-	pub truncate_size: u64,
-	pub oloc: oloc,
-	pub buffer_extents: buffer_extents,
-}
-
-impl<'a> CephPrimitive<'a> for Objectextent{
-	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
-	chain!(input,
-		oid: parser_str ~
-		objectno: le_u64 ~
-		offset: le_u64 ~
-		length: le_u64 ~
-		truncate_size: le_u64 ~
-		oloc: ObjectLocatorT ~
-		count: le_u32 ~
-		buffer_extents: count!(call!(pair<le_u64, le_u64>::read_from_wire), count),
-		||{
-			Objectextent{
-			oid: oid,
-			objectno: objectno,
-			offset: offset,
-			length: length,
-			truncate_size: truncate_size,
-			oloc: oloc,
-			buffer_extents: buffer_extents,
 		}
 	})
 }
@@ -503,8 +440,8 @@ fn test_ceph_write_PgQueryT(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct PgQueryT{
 	pub query_type: u32,
-	pub since: since,
-	pub history: history,
+	pub since: EversionT,
+	pub history: PgHistory,
 	pub epoch_sent: u32,
 	pub to: i8,
 	pub from: i8,
@@ -590,6 +527,7 @@ impl<'a> CephPrimitive<'a> for PgNotifyT{
 	}
 }
 
+/*
 #[test]
 fn test_ceph_read_OSDSuperblock(){
 	let bytes = vec![
@@ -621,7 +559,8 @@ pub struct Osdsuperblock{
 	pub oldest_map: u32,
 	pub newest_map: u32,
 	pub weight: f64,
-	pub compat_features: compat_features,
+    //TODO: Decode CompatSet
+	pub compat_features: CompatSet,
 	pub mounted: u32,
 	pub clean_thru: u32,
 }
@@ -659,6 +598,7 @@ impl<'a> CephPrimitive<'a> for Osdsuperblock{
 		return Ok(buffer);
 	}
 }
+*/
 
 #[test]
 fn test_ceph_read_pg_interval_t(){
@@ -684,8 +624,8 @@ fn test_ceph_write_PgIntervalT(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct PgIntervalT{
-	pub up: up,
-	pub acting: acting,
+	pub up: Vec<i32>,
+	pub acting: Vec<i32>,
 	pub first: u32,
 	pub last: u32,
 	pub maybe_went_rw: u8,
@@ -790,8 +730,8 @@ fn test_ceph_write_Scrubmap(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Scrubmap{
-	pub valid_through: valid_through,
-	pub incr_since: incr_since,
+	pub valid_through: EversionT,
+	pub incr_since: EversionT,
 }
 
 impl<'a> CephPrimitive<'a> for Scrubmap{
@@ -836,7 +776,7 @@ fn test_ceph_write_ObjListWatchResponseT(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct ObjListWatchResponseT{
-	pub entries: entries,
+	pub entries: Vec<watch_item_t>,
 }
 
 impl<'a> CephPrimitive<'a> for ObjListWatchResponseT{
@@ -1073,11 +1013,11 @@ fn test_ceph_write_PgLogT(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct PgLogT{
-	pub head: head,
-	pub tail: tail,
-	pub can_rollback_to: can_rollback_to,
-	pub rollback_info_trimmed_to: rollback_info_trimmed_to,
-	pub log: log,
+	pub head: EversionT,
+	pub tail: EversionT,
+	pub can_rollback_to: EversionT,
+	pub rollback_info_trimmed_to: EversionT,
+	pub log: Vec<pg_log_entry_t>,
 }
 
 impl<'a> CephPrimitive<'a> for PgLogT{
@@ -1129,18 +1069,18 @@ fn test_ceph_write_PgInfoT(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct PgInfoT{
-	pub pgid: pgid,
-	pub last_update: last_update,
-	pub last_complete: last_complete,
+	pub pgid: SpgT,
+	pub last_update: EversionT,
+	pub last_complete: EversionT,
 	pub last_epoch_started: u32,
 	pub last_user_version: u64,
-	pub log_tail: log_tail,
-	pub last_backfill: last_backfill,
+	pub log_tail: EversionT,
+	pub last_backfill: HObject,
 	pub last_backfill_bitwise: u8,
 	pub purged_snaps: Vec<u64>,
-	pub stats: stats,
-	pub history: history,
-	pub hit_set: hit_set,
+	pub stats: PgStatT,
+	pub history: PgHistory,
+	pub hit_set: pg_hit_set_history_t,
 }
 
 impl<'a> CephPrimitive<'a> for PgInfoT{
@@ -1206,7 +1146,7 @@ fn test_ceph_write_PgMissingT(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct PgMissingT{
-	pub rmissing: rmissing,
+	pub rmissing: Vec<(u64, HObject)>,
 }
 
 impl<'a> CephPrimitive<'a> for PgMissingT{
@@ -1251,7 +1191,7 @@ fn test_ceph_write_PoolSnapInfoT(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct PoolSnapInfoT{
 	pub snapid: u64,
-	pub stamp: stamp,
+	pub stamp: Utime,
 	pub name: &'a str,
 }
 
@@ -1343,26 +1283,29 @@ fn test_ceph_write_Pushop(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Pushop{
-	pub soid: soid,
-	pub version: version,
-	pub data: data,
+	pub soid: HObject,
+	pub version: EversionT,
+	pub data: &'a [u8],
 	pub data_included: data_included,
-	pub omap_header: omap_header,
-	pub omap_entries: omap_entries,
-	pub attrset: attrset,
-	pub recovery_info: recovery_info,
-	pub before_progress: before_progress,
-	pub after_progress: after_progress,
+	pub omap_header: &'a [u8],
+	pub omap_entries: Vec<(&'a str, &'a [u8])>,
+	pub attrset: Vec<(&'a str, &'a [u8])>,
+	pub recovery_info: Objectrecoveryinfo,
+	pub before_progress: Objectrecoveryprogress,
+	pub after_progress: Objectrecoveryprogress,
 }
 
 impl<'a> CephPrimitive<'a> for Pushop{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
 		soid: call!(HObject::read_from_wire) ~
-		version: call!(Eversion::read_from_wire) ~
-		data: call!(bufferlist::read_from_wire) ~
-		data_included: count!(le_u64, count) ~
-		omap_header: call!(bufferlist::read_from_wire) ~
+		version: call!(EversionT::read_from_wire) ~
+        data_size: le_u32 ~
+		data: take!(data_size) ~
+        data_count: le_u32 ~
+		data_included: count!(le_u64, data_count) ~
+        omap_header_size: le_u32 ~
+		omap_header: take!(omap_header_size) ~
 		count: le_u32 ~
 		omap_entries: count!(pair!(parse_str,bufferlist), count) ~
 		count: le_u32 ~
@@ -1462,7 +1405,7 @@ pub struct PgStatT{
 impl<'a> CephPrimitive<'a> for PgStatT{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
-		version: call!(Eversion::read_from_wire) ~
+		version: call!(EversionT::read_from_wire) ~
 		reported_seq: le_u64 ~
 		reported_epoch: le_u32 ~
 		state: le_u32 ~
@@ -1474,14 +1417,14 @@ impl<'a> CephPrimitive<'a> for PgStatT{
 		last_unstale: call!(Utime::read_from_wire) ~
 		last_undegraded: call!(Utime::read_from_wire) ~
 		last_fullsized: call!(Utime::read_from_wire) ~
-		log_start: call!(Eversion::read_from_wire) ~
-		ondisk_log_start: call!(Eversion::read_from_wire) ~
+		log_start: call!(EversionT::read_from_wire) ~
+		ondisk_log_start: call!(EversionT::read_from_wire) ~
 		created: le_u32 ~
 		last_epoch_clean: le_u32 ~
 		parent: call!(pg_t::read_from_wire) ~
 		parent_split_bits: le_u32 ~
-		last_scrub: call!(Eversion::read_from_wire) ~
-		last_deep_scrub: call!(Eversion::read_from_wire) ~
+		last_scrub: call!(EversionT::read_from_wire) ~
+		last_deep_scrub: call!(EversionT::read_from_wire) ~
 		last_scrub_stamp: call!(Utime::read_from_wire) ~
 		last_deep_scrub_stamp: call!(Utime::read_from_wire) ~
 		last_clean_scrub_stamp: call!(Utime::read_from_wire) ~
@@ -1807,8 +1750,8 @@ pub struct PgMissingTItem{
 impl<'a> CephPrimitive<'a> for PgMissingTItem{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
-		need: call!(Eversion::read_from_wire) ~
-		have: call!(Eversion::read_from_wire),
+		need: call!(EversionT::read_from_wire) ~
+		have: call!(EversionT::read_from_wire),
 		||{
 			PgMissingTItem{
 			need: need,
@@ -1845,7 +1788,7 @@ fn test_ceph_write_WatchItemT(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct WatchItemT{
-	pub name: name,
+	pub name: EntityNameT,
 	pub cookie: u64,
 	pub timeout_seconds: u32,
 	pub addr: addr,
@@ -1854,7 +1797,7 @@ pub struct WatchItemT{
 impl<'a> CephPrimitive<'a> for WatchItemT{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
-		name: EntityNameT ~
+		name: call!(EntityNameT::read_from_wire) ~
 		cookie: le_u64 ~
 		timeout_seconds: le_u32 ~
 		addr: EntityAddr,
@@ -1899,7 +1842,7 @@ pub struct NotifyInfoT{
 	pub cookie: u64,
 	pub notify_id: u64,
 	pub timeout: u32,
-	pub bl: bl,
+	pub bl: &'a [u8],
 }
 
 impl<'a> CephPrimitive<'a> for NotifyInfoT{
@@ -1908,7 +1851,8 @@ impl<'a> CephPrimitive<'a> for NotifyInfoT{
 		cookie: le_u64 ~
 		notify_id: le_u64 ~
 		timeout: le_u32 ~
-		bl: call!(bufferlist::read_from_wire),
+        bl_size: le_u32 ~
+		bl: take!(bl_size),
 		||{
 			NotifyInfoT{
 			cookie: cookie,
@@ -1970,9 +1914,9 @@ impl<'a> CephPrimitive<'a> for Ecsubwrite{
 		soid: call!(HObject::read_from_wire) ~
 		stats: call!(PgStatT::read_from_wire) ~
 		t: call!(ObjectStore::Transaction::read_from_wire) ~
-		at_version: call!(Eversion::read_from_wire) ~
-		trim_to: call!(Eversion::read_from_wire) ~
-		trim_rollback_to: call!(Eversion::read_from_wire) ~
+		at_version: call!(EversionT::read_from_wire) ~
+		trim_to: call!(EversionT::read_from_wire) ~
+		trim_rollback_to: call!(EversionT::read_from_wire) ~
 		count: le_u32 ~
 		log_entries: count!(call!(pg_log_entry_t::read_from_wire), count) ~
 		count: le_u32 ~
@@ -2153,8 +2097,8 @@ impl<'a> CephPrimitive<'a> for ObjectInfoT{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
 		soid: call!(HObject::read_from_wire) ~
-		version: call!(Eversion::read_from_wire) ~
-		prior_version: call!(Eversion::read_from_wire) ~
+		version: call!(EversionT::read_from_wire) ~
+		prior_version: call!(EversionT::read_from_wire) ~
 		user_version: le_u64 ~
 		last_reqid: call!(osd_reqid_t::read_from_wire) ~
 		size: le_u64 ~
@@ -2262,13 +2206,14 @@ fn test_ceph_write_Objectmoddesc(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Objectmoddesc{
-	pub bl: bl,
+	pub bl: &'a [u8],
 }
 
 impl<'a> CephPrimitive<'a> for Objectmoddesc{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
-		bl: call!(bufferlist::read_from_wire),
+        count: le_u32 ~
+		bl: take!(count),
 		||{
 			Objectmoddesc{
 			bl: bl,
@@ -2411,7 +2356,7 @@ impl<'a> CephPrimitive<'a> for Objectrecoveryinfo{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
 		soid: call!(HObject::read_from_wire) ~
-		version: call!(Eversion::read_from_wire) ~
+		version: call!(EversionT::read_from_wire) ~
 		size: le_u64 ~
 		oi: call!(ObjectInfoT::read_from_wire) ~
 		ss: call!(SnapSet::read_from_wire) ~
@@ -2574,7 +2519,7 @@ pub struct MOsdRepOp{
 	pub pgid: pgid,
 	pub poid: poid,
 	pub acks_wanted: u8,
-	pub logbl: logbl,
+	pub logbl: &'a [u8],
 	pub pg_stats: PgStatTs,
 	pub version: version,
 	pub pg_trim_to: pg_trim_to,
@@ -2592,11 +2537,12 @@ impl<'a> CephPrimitive<'a> for MOsdRepOp{
 		pgid: call!(SpgT::read_from_wire) ~
 		poid: call!(HObject::read_from_wire) ~
 		acks_wanted: le_u8 ~
-		logbl: call!(bufferlist::read_from_wire) ~
+        log_size: le_u32 ~
+		logbl: take!(log_size) ~
 		pg_stats: call!(PgStatT::read_from_wire) ~
-		version: call!(Eversion::read_from_wire) ~
-		pg_trim_to: call!(Eversion::read_from_wire) ~
-		pg_trim_rollback_to: call!(Eversion::read_from_wire) ~
+		version: call!(EversionT::read_from_wire) ~
+		pg_trim_to: call!(EversionT::read_from_wire) ~
+		pg_trim_rollback_to: call!(EversionT::read_from_wire) ~
 		new_temp_oid: call!(HObject::read_from_wire) ~
 		discard_temp_oid: call!(HObject::read_from_wire) ~
 		updated_hit_set_history: opt!(pg_hit_set_history_t::read_from_wire),
@@ -2703,7 +2649,7 @@ pub struct Mwatchnotify{
 	pub ver: u64,
 	pub notify_id: u64,
 	pub opcode: u8,
-	pub bl: bl,
+	pub bl: &'a [u8],
 	pub return_code: i32,
 	pub notifier_gid: u64,
 }
@@ -2715,7 +2661,8 @@ impl<'a> CephPrimitive<'a> for Mwatchnotify{
 		ver: le_u64 ~
 		notify_id: le_u64 ~
 		opcode: le_u8 ~
-		bl: call!(bufferlist::read_from_wire) ~
+        bl_size: le_u32 ~
+		bl: take!(bl_size) ~
 		return_code: le_i32 ~
 		notifier_gid: le_u64,
 		||{
@@ -3069,7 +3016,7 @@ pub struct Mpoolopreply{
 	pub fsid: Uuid,
 	pub replyCode: u32,
 	pub epoch: u32,
-	pub response_data: response_data,
+	pub response_data: &'a [u8],
 }
 
 impl<'a> CephPrimitive<'a> for Mpoolopreply{
@@ -3078,7 +3025,8 @@ impl<'a> CephPrimitive<'a> for Mpoolopreply{
 		fsid: parse_fsid ~
 		replyCode: le_u32 ~
 		epoch: le_u32 ~
-		response_data: call!(bufferlist::read_from_wire),
+        response_size: le_u32 ~
+		response_data: take!(response_size),
 		||{
 			Mpoolopreply{
 			fsid: fsid,
@@ -3235,13 +3183,13 @@ pub struct Mosdsubop{
 	pub old_version: old_version,
 	pub snapset: snapset,
 	pub snapc: snapc,
-	pub logbl: logbl,
+	pub logbl: &'a [u8],
 	pub pg_stats: PgStatTs,
 	pub version: version,
 	pub pg_trim_to: pg_trim_to,
 	pub pg_trim_rollback_to: pg_trim_rollback_to,
-	pub peer_stat: peer_stat,
-	pub attrset: attrset,
+	pub peer_stat: Utime,
+	pub attrset: &'a [u8],
 	pub data_subset: data_subset,
 	pub clone_subsets: clone_subsets,
 	pub first: u8,
@@ -3250,8 +3198,8 @@ pub struct Mosdsubop{
 	pub recovery_info: recovery_info,
 	pub recovery_progress: recovery_progress,
 	pub current_progress: current_progress,
-	pub omap_entries: omap_entries,
-	pub omap_header: omap_header,
+	pub omap_entries: &'a [u8],
+	pub omap_header: &'a [u8],
 	pub new_temp_oid: new_temp_oid,
 	pub discard_temp_oid: discard_temp_oid,
 	pub updated_hit_set_history: updated_hit_set_history,
@@ -3271,17 +3219,21 @@ impl<'a> CephPrimitive<'a> for Mosdsubop{
 		mtime: call!(Utime::read_from_wire) ~
 		old_exists: le_u8 ~
 		old_size: le_u64 ~
-		old_version: call!(Eversion::read_from_wire) ~
+		old_version: call!(EversionT::read_from_wire) ~
 		snapset: call!(SnapSet::read_from_wire) ~
 		snapc: call!(SnapContext::read_from_wire) ~
-		logbl: call!(bufferlist::read_from_wire) ~
+        log_size: le_u32 ~
+		logbl: take!(log_size) ~
 		pg_stats: call!(PgStatT::read_from_wire) ~
-		version: call!(Eversion::read_from_wire) ~
-		pg_trim_to: call!(Eversion::read_from_wire) ~
-		pg_trim_rollback_to: call!(Eversion::read_from_wire) ~
+		version: call!(EversionT::read_from_wire) ~
+		pg_trim_to: call!(EversionT::read_from_wire) ~
+		pg_trim_rollback_to: call!(EversionT::read_from_wire) ~
 		peer_stat: call!(Utime::read_from_wire) ~
+        //TODO: How does this work?
 		count: le_u32 ~
-		attrset: count!(pair!(parse_str,bufferlist), count) ~
+		attrset: count!(
+            pair!(parse_str,bufferlist),
+            count) ~
 		data_subset: count!(le_u64, count) ~
 		count: le_u32 ~
 		clone_subsets: count!(pair!(hobject_t,count!(le_u64, count)), count) ~
@@ -3293,7 +3245,8 @@ impl<'a> CephPrimitive<'a> for Mosdsubop{
 		current_progress: call!(ObjectRecoveryProgress::read_from_wire) ~
 		count: le_u32 ~
 		omap_entries: count!(pair!(parse_str,bufferlist), count) ~
-		omap_header: call!(bufferlist::read_from_wire) ~
+        omap_header_size: le_u32 ~
+		omap_header: take!(omap_header_size) ~
 		new_temp_oid: call!(HObject::read_from_wire) ~
 		discard_temp_oid: call!(HObject::read_from_wire) ~
 		updated_hit_set_history: opt!(pg_hit_set_history_t::read_from_wire),
@@ -3366,8 +3319,8 @@ fn test_ceph_write_Mosdpgtrim(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mosdpgtrim{
 	pub epoch: u32,
-	pub pgid: pgid,
-	pub trim_to: trim_to,
+	pub pgid: SpgT,
+	pub trim_to: EversionT,
 }
 
 impl<'a> CephPrimitive<'a> for Mosdpgtrim{
@@ -3375,7 +3328,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgtrim{
 	chain!(input,
 		epoch: le_u32 ~
 		pgid: call!(SpgT::read_from_wire) ~
-		trim_to: Eversion,
+		trim_to: call!(EversionT::read_from_wire),
 		||{
 			Mosdpgtrim{
 			epoch: epoch,
@@ -3414,13 +3367,13 @@ fn test_ceph_write_Mosdrepscrub(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mosdrepscrub{
-	pub pgid: pgid,
-	pub scrub_from: scrub_from,
-	pub scrub_to: scrub_to,
+	pub pgid: SpgT,
+	pub scrub_from: EversionT,
+	pub scrub_to: EversionT,
 	pub map_epoch: u32,
 	pub chunky: u8,
-	pub start: start,
-	pub end: end,
+	pub start: HObject,
+	pub end: HObject,
 	pub deep: u8,
 	pub seed: u32,
 }
@@ -3431,8 +3384,8 @@ impl<'a> CephPrimitive<'a> for Mosdrepscrub{
 	let compat_version = 1;
 	chain!(input,
 		pgid: call!(SpgT::read_from_wire) ~
-		scrub_from: call!(Eversion::read_from_wire) ~
-		scrub_to: call!(Eversion::read_from_wire) ~
+		scrub_from: call!(EversionT::read_from_wire) ~
+		scrub_to: call!(EversionT::read_from_wire) ~
 		map_epoch: le_u32 ~
 		chunky: le_u8 ~
 		start: call!(HObject::read_from_wire) ~
@@ -3483,9 +3436,9 @@ fn test_ceph_write_Mosdecsubopwritereply(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mosdecsubopwritereply{
-	pub pgid: pgid,
+	pub pgid: SpgT,
 	pub map_epoch: u32,
-	pub op: op,
+	pub op: ECSubWriteReply,
 }
 
 impl<'a> CephPrimitive<'a> for Mosdecsubopwritereply{
@@ -3532,7 +3485,7 @@ fn test_ceph_write_Mosdscrub(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mosdscrub{
 	pub fsid: Uuid,
-	pub scrub_pgs: scrub_pgs,
+	pub scrub_pgs: Vec<scrub_pgs>,
 	pub repair: u8,
 	pub deep: u8,
 }
@@ -3589,8 +3542,8 @@ pub struct Mosdping{
 	pub map_epoch: u32,
 	pub peer_as_of_epoch: u32,
 	pub op: u8,
-	pub peer_stat: peer_stat,
-	pub stamp: stamp,
+	pub peer_stat: Utime,
+	pub stamp: Utime,
 }
 
 impl<'a> CephPrimitive<'a> for Mosdping{
@@ -3601,7 +3554,7 @@ impl<'a> CephPrimitive<'a> for Mosdping{
 		peer_as_of_epoch: le_u32 ~
 		op: le_u8 ~
 		peer_stat: call!(Utime::read_from_wire) ~
-		stamp: Utime,
+		stamp: call!(Utime::read_from_wire),
 		||{
 			Mosdping{
 			fsid: fsid,
@@ -3643,9 +3596,9 @@ fn test_ceph_write_Mosdpgpush(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mosdpgpush{
 	pub from: from,
-	pub pgid: pgid,
+	pub pgid: SpgT,
 	pub map_epoch: u32,
-	pub pushes: pushes,
+	pub pushes: Vec<Pushop>,
 	pub cost: u64,
 }
 
@@ -3785,9 +3738,9 @@ fn test_ceph_write_Mosdpgpushreply(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mosdpgpushreply{
 	pub from: from,
-	pub pgid: pgid,
+	pub pgid: SpgT,
 	pub map_epoch: u32,
-	pub replies: replies,
+	pub replies: Vec<PushReplyOp>,
 	pub cost: u64,
 }
 
@@ -3814,6 +3767,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgpushreply{
 		return Ok(buffer);
 	}
 }
+/*
 #[test]
 fn test_ceph_read_MOSDBoot(){
 	let bytes = vec![
@@ -3838,10 +3792,10 @@ fn test_ceph_write_Mosdboot(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mosdboot{
-	pub sb: sb,
-	pub hb_back_addr: hb_back_addr,
-	pub hb_front_addr: hb_front_addr,
-	pub cluster_addr: cluster_addr,
+	pub sb: OSDSuperblock,
+	pub hb_back_addr: EntityAddr,
+	pub hb_front_addr: EntityAddr,
+	pub cluster_addr: EntityAddr,
 	pub boot_epoch: u32,
 	pub metadata: metadata,
 	pub osd_features: u64,
@@ -3851,9 +3805,9 @@ impl<'a> CephPrimitive<'a> for Mosdboot{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
 		sb: call!(OSDSuperblock::read_from_wire) ~
-		hb_back_addr: EntityAddr ~
-		hb_front_addr: EntityAddr ~
-		cluster_addr: EntityAddr ~
+		hb_back_addr: call!(EntityAddr::read_from_wire) ~
+		hb_front_addr: call!(EntityAddr::read_from_wire) ~
+		cluster_addr: call!(EntityAddr::read_from_wire) ~
 		boot_epoch: le_u32 ~
 		count: le_u32 ~
 		metadata: count!(pair!(parse_str,parse_str), count) ~
@@ -3875,6 +3829,8 @@ impl<'a> CephPrimitive<'a> for Mosdboot{
 		return Ok(buffer);
 	}
 }
+*/
+
 #[test]
 fn test_ceph_read_MOSDPGScan(){
 	let bytes = vec![
@@ -3903,9 +3859,9 @@ pub struct Mosdpgscan{
 	pub map_epoch: u32,
 	pub query_epoch: u32,
 	pub from: from,
-	pub pgid: pgid,
-	pub begin: begin,
-	pub end: end,
+	pub pgid: SpgT,
+	pub begin: HObject,
+	pub end: HObject,
 }
 
 impl<'a> CephPrimitive<'a> for Mosdpgscan{
@@ -3916,7 +3872,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgscan{
 		query_epoch: le_u32 ~
 		pgid: call!(SpgT::read_from_wire) ~
 		begin: call!(HObject::read_from_wire) ~
-		end: HObject,
+		end: call!(HObject::read_from_wire),
 		||{
 			Mosdpgscan{
 			op: op,
@@ -3959,9 +3915,9 @@ fn test_ceph_write_Mosdpgpull(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mosdpgpull{
 	pub from: from,
-	pub pgid: pgid,
+	pub pgid: SpgT,
 	pub map_epoch: u32,
-	pub pulls: pulls,
+	pub pulls: Vec<Pullop>,
 	pub cost: u64,
 }
 
@@ -4014,8 +3970,8 @@ fn test_ceph_write_Mosdmap(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mosdmap{
 	pub fsid: Uuid,
-	pub maps: maps,
-	pub incremental_maps: incremental_maps,
+	pub maps: Vec<(u32, &'a [u8])>,
+	pub incremental_maps: Vec<(u32, &'a [u8])>,
 	pub oldest_map: u32,
 	pub newest_map: u32,
 }
@@ -4025,9 +3981,9 @@ impl<'a> CephPrimitive<'a> for Mosdmap{
 	chain!(input,
 		fsid: parse_fsid ~
         count: le_u32 ~
-	    maps: count!(pair!(epoch_t,bufferlist), count) ~
+	    maps: count!(pair!(le_u32,bufferlist), count) ~
 		count: le_u32 ~
-		incremental_maps: count!(pair!(epoch_t,bufferlist), count) ~
+		incremental_maps: count!(pair!(le_u32,bufferlist), count) ~
 		oldest_map: le_u32 ~
 		newest_map: le_u32,
 		||{
@@ -4070,9 +4026,9 @@ fn test_ceph_write_Mosdecsubopreadreply(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mosdecsubopreadreply{
-	pub pgid: pgid,
+	pub pgid: SpgT,
 	pub map_epoch: u32,
-	pub op: op,
+	pub op: ECSubReadReply,
 }
 
 impl<'a> CephPrimitive<'a> for Mosdecsubopreadreply{
@@ -4080,7 +4036,7 @@ impl<'a> CephPrimitive<'a> for Mosdecsubopreadreply{
 	chain!(input,
 		pgid: call!(SpgT::read_from_wire) ~
 		map_epoch: le_u32 ~
-		op: ECSubReadReply,
+		op: call!(ECSubReadReply::read_from_wire),
 		||{
 			Mosdecsubopreadreply{
 			pgid: pgid,
@@ -4207,7 +4163,7 @@ fn test_ceph_write_Mgetpoolstats(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mgetpoolstats{
 	pub fsid: Uuid,
-	pub pools: pools,
+	pub pools: Vec<& 'a str>,
 }
 
 impl<'a> CephPrimitive<'a> for Mgetpoolstats{
@@ -4215,7 +4171,7 @@ impl<'a> CephPrimitive<'a> for Mgetpoolstats{
 	chain!(input,
 		fsid: parse_fsid ~
 		count: le_u32 ~
-		pools: count!(call!(ring::read_from_wire),count),
+		pools: count!(parse_str, count),
 		||{
 			Mgetpoolstats{
 			fsid: fsid,
@@ -4255,13 +4211,13 @@ pub struct Mosdsubopreply{
 	pub map_epoch: u32,
 	pub reqid: reqid,
 	pub from: from,
-	pub pgid: pgid,
-	pub poid: poid,
-	pub ops: ops,
+	pub pgid: SpgT,
+	pub poid: HObject,
+	pub ops: Vec<OsdOp>,
 	pub ack_type: u8,
 	pub result: i32,
-	pub last_complete_ondisk: last_complete_ondisk,
-	pub peer_stat: peer_stat,
+	pub last_complete_ondisk: EversionT,
+	pub peer_stat: Utime,
 	pub attrset: attrset,
 }
 
@@ -4276,11 +4232,11 @@ impl<'a> CephPrimitive<'a> for Mosdsubopreply{
 		ops: count!(call!(OSDOp::read_from_wire), count) ~
 		ack_type: le_u8 ~
 		result: le_i32 ~
-		last_complete_ondisk: call!(Eversion::read_from_wire) ~
+		last_complete_ondisk: call!(EversionT::read_from_wire) ~
 		peer_stat: call!(Utime::read_from_wire) ~
 		attrset: call!(peer_stat::read_form_wire) ~
 		count: le_u32 ~
-		count!(pair!(parsestr,bufferptr), count),
+		count!(pair!(parse_str,bufferptr), count),
 		||{
 			Mosdsubopreply{
 			map_epoch: map_epoch,
@@ -4377,14 +4333,14 @@ fn test_ceph_write_Mosdpgremove(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mosdpgremove{
-	pub pg_list: pg_list,
+	pub pg_list: Vec<SpgT>,
 }
 
 impl<'a> CephPrimitive<'a> for Mosdpgremove{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
 		count: le_u32 ~
-		pg_list: count!(call!(spg_t::read_from_wire), count),
+		pg_list: count!(call!(SpgT::read_from_wire), count),
 		||{
 			Mosdpgremove{
 			pg_list: pg_list,
@@ -4421,12 +4377,12 @@ fn test_ceph_write_MOsdRepOpreply(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct MOsdRepOpreply{
 	pub map_epoch: u32,
-	pub reqid: reqid,
+	pub reqid: osd_reqid_t,
 	pub from: from,
-	pub pgid: pgid,
+	pub pgid: SpgT,
 	pub ack_type: u8,
 	pub result: i32,
-	pub last_complete_ondisk: last_complete_ondisk,
+	pub last_complete_ondisk: EversionT,
 }
 
 impl<'a> CephPrimitive<'a> for MOsdRepOpreply{
@@ -4437,7 +4393,7 @@ impl<'a> CephPrimitive<'a> for MOsdRepOpreply{
 		pgid: call!(SpgT::read_from_wire) ~
 		ack_type: le_u8 ~
 		result: le_i32 ~
-		last_complete_ondisk: call!(Eversion::read_from_wire),
+		last_complete_ondisk: call!(EversionT::read_from_wire),
 		||{
 			MOsdRepOpreply{
 			map_epoch: map_epoch,
@@ -4530,10 +4486,10 @@ fn test_ceph_write_Mosdpglog(){
 pub struct Mosdpglog{
 	pub to: i8,
 	pub from: i8,
-	pub info: info,
-	pub log: log,
-	pub missing: missing,
-	pub past_intervals: past_intervals,
+	pub info: PgInfoT,
+	pub log: PgLogT,
+	pub missing: pg_missing_t,
+	pub past_intervals: pg_interval_map_t,
 }
 
 impl<'a> CephPrimitive<'a> for Mosdpglog{
@@ -4594,7 +4550,7 @@ impl<'a> CephPrimitive<'a> for Mgetpoolstatsreply{
 	chain!(input,
 		fsid: parse_fsid ~
 		count: le_u32 ~
-		pools: count!(
+		pool_stats: count!(
             pair!(parse_str, call!(PoolStatT::read_from_wire)),
             count) ,
 		||{

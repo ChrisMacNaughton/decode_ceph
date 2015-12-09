@@ -7,6 +7,7 @@ use serial;
 use self::uuid::{ParseError, Uuid};
 use self::nom::{le_i8, le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16};
 use serial::*;
+use common_decode::{EntityNameT, EversionT};
 
 #[test]
 fn test_ceph_read_MLog(){
@@ -224,7 +225,7 @@ fn test_ceph_write_Mcommand(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mcommand{
 	pub fsid: Uuid,
-	pub cmd: Vec<cmd>,
+	pub cmd: Vec<&'a str>,
 }
 
 impl<'a> CephPrimitive<'a> for Mcommand{
@@ -273,9 +274,9 @@ pub struct Mforward{
 	pub client: client,
 	pub client_caps: client_caps,
 	pub con_features: u64,
-	pub entity_name: entity_name,
+	pub entity_name: EntityNameT,
 	pub msg: msg,
-	pub msg_bl: msg_bl,
+	pub msg_bl: &'a [u8],
 }
 
 impl<'a> CephPrimitive<'a> for Mforward{
@@ -287,9 +288,10 @@ impl<'a> CephPrimitive<'a> for Mforward{
 		client: call!(entity_inst_t::read_from_wire) ~
 		client_caps: call!(MonCap::read_from_wire) ~
 		con_features: le_u64 ~
-		entity_name: call!(EntityName::read_from_wire) ~
+		entity_name: call!(EntityNameT::read_from_wire) ~
 		msg: call!(PaxosServiceMessage *::read_from_wire) ~
-		msg_bl: call!(bufferlist::read_from_wire),
+        msg_size: le_u32 ~
+		msg_bl: take!(msg_size),
 		||{
 			Mforward{
 			tid: tid,
@@ -658,13 +660,14 @@ fn test_ceph_write_Mmonmap(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mmonmap{
-	pub monmapbl: monmapbl,
+	pub monmapbl: &'a [u8],
 }
 
 impl<'a> CephPrimitive<'a> for Mmonmap{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
-		monmapbl: call!(bufferlist::read_from_wire),
+        monmap_size: le_u32 ~
+		monmapbl: take!(monmap_size),
 		||{
 			Mmonmap{
 			monmapbl: monmapbl,
@@ -704,7 +707,7 @@ pub struct Mauthreply{
 	pub result: i32,
 	pub global_id: u64,
 	pub result_msg: &'a str,
-	pub result_bl: result_bl,
+	pub result_bl: &'a [u8],
 }
 
 impl<'a> CephPrimitive<'a> for Mauthreply{
@@ -714,7 +717,8 @@ impl<'a> CephPrimitive<'a> for Mauthreply{
 		result: le_i32 ~
 		global_id: le_u64 ~
 		result_msg: parse_str ~
-		result_bl: call!(bufferlist::read_from_wire),
+        result_bl_size: le_u32 ~
+		result_bl: take!(result_bl_size),
 		||{
 			Mauthreply{
 			protocol: protocol,
@@ -817,10 +821,10 @@ pub struct Mmonelection{
 	pub fsid: Uuid,
 	pub op: i32,
 	pub epoch: u32,
-	pub monmap_bl: monmap_bl,
+	pub monmap_bl: &'a [u8],
 	pub quorum: quorum,
 	pub quorum_features: u64,
-	pub sharing_bl: sharing_bl,
+	pub sharing_bl: &'a [u8],
 	pub defunct_one: u64,
 	pub defunct_two: u64,
 }
@@ -835,11 +839,13 @@ impl<'a> CephPrimitive<'a> for Mmonelection{
 		fsid: parse_fsid ~
 		op: le_i32 ~
 		epoch: le_u32 ~
-		monmap_bl: call!(bufferlist::read_from_wire) ~
+        monmap_size: le_u32 ~
+		monmap_bl: take!(monmap_size) ~
 		count: le_u32 ~
 		quorum: count!(le_i32,count) ~
 		quorum_features: le_u64 ~
-		sharing_bl: call!(bufferlist::read_from_wire) ~
+        sharing_size: le_u32 ~
+		sharing_bl: take!(sharing_size) ~
 		defunct_one: le_u64 ~
 		defunct_two: le_u64,
 		||{
@@ -894,7 +900,7 @@ pub struct Mmonprobe{
 	pub op: i32,
 	pub name: &'a str,
 	pub quorum: quorum,
-	pub monmap_bl: monmap_bl,
+	pub monmap_bl: &'a [u8],
 	pub paxos_first_version: u64,
 	pub paxos_last_version: u64,
 	pub has_ever_joined: u8,
@@ -911,7 +917,8 @@ impl<'a> CephPrimitive<'a> for Mmonprobe{
 		name: parse_str ~
 		count: le_u32 ~
 		quorum: count!(le_i32,count) ~
-		monmap_bl: call!(bufferlist::read_from_wire) ~
+        monmap_size: le_u32 ~
+		monmap_bl: take!(monmap_size) ~
 		paxos_first_version: le_u64 ~
 		paxos_last_version: le_u64 ~
 		has_ever_joined: le_u8 ~
@@ -1107,7 +1114,7 @@ pub struct Mmonsync{
 	pub cookie: u64,
 	pub last_committed: u64,
 	pub last_key: last_key,
-	pub chunk_bl: chunk_bl,
+	pub chunk_bl: &'a [u8],
 	pub reply_to: reply_to,
 }
 
@@ -1118,7 +1125,8 @@ impl<'a> CephPrimitive<'a> for Mmonsync{
 		cookie: le_u64 ~
 		last_committed: le_u64 ~
 		last_key: pair!(call!(parsestr::read_from_wire),call!(parsestr::read_from_wire)) ~
-		chunk_bl: call!(bufferlist::read_from_wire) ~
+        chunk_size: le_u32 ~
+		chunk_bl: take!(chunk_size) ~
 		reply_to: call!(entity_inst_t::read_from_wire),
 		||{
 			Mmonsync{
@@ -1170,8 +1178,8 @@ pub struct Mmonpaxos{
 	pub lease_timestamp: lease_timestamp,
 	pub sent_timestamp: sent_timestamp,
 	pub latest_version: u64,
-	pub latest_value: latest_value,
-	pub values: Vec<parse_str>,
+	pub latest_value: &'a [u8],
+	pub values: Vec<&'a str>,
 }
 
 impl<'a> CephPrimitive<'a> for Mmonpaxos{
@@ -1187,8 +1195,8 @@ impl<'a> CephPrimitive<'a> for Mmonpaxos{
 		lease_timestamp: call!(Utime::read_from_wire) ~
 		sent_timestamp: call!(Utime::read_from_wire) ~
 		latest_version: le_u64 ~
-		latest_value: call!(bufferlist::read_from_wire) ~
-		//values: count: le_u32 ~
+        latest_value_size: le_u32 ~
+		latest_value: take!(latest_value_size) ~
 		count: le_u32 ~
 		count!(pair!(le_u64,bufferlist::read_form_wire), count),
 		||{
@@ -1286,7 +1294,7 @@ fn test_ceph_write_Mauth(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mauth{
 	pub protocol: u32,
-	pub auth_payload: auth_payload,
+	pub auth_payload: &'a [u8],
 	pub monmap_epoch: u32,
 }
 
@@ -1294,7 +1302,8 @@ impl<'a> CephPrimitive<'a> for Mauth{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
 		protocol: le_u32 ~
-		auth_payload: call!(bufferlist::read_from_wire) ~
+        auth_size: le_u32 ~
+		auth_payload: take!(auth_size) ~
 		monmap_epoch: le_u32,
 		||{
 			Mauth{

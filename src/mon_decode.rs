@@ -7,7 +7,7 @@ use serial;
 use self::uuid::{ParseError, Uuid};
 use self::nom::{le_i8, le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16};
 use serial::*;
-use common_decode::{EntityNameT, EversionT};
+use common_decode::{EntityNameT, EntityInstT, EversionT};
 
 #[test]
 fn test_ceph_read_MLog(){
@@ -45,7 +45,7 @@ enum CLogType {
 }
 
 pub struct LogEntry {
-  pub who: entity_inst_t,
+  pub who: EntityInstT,
   pub stamp: Utime,
   pub seq: u64,
   pub prio: CLogType,
@@ -55,7 +55,7 @@ pub struct LogEntry {
 impl<'a> CephPrimitive<'a> for LogEntry{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
-          who: call!(entity_inst_t::read_from_wire)~
+          who: call!(EntityInstT::read_from_wire)~
           stamp: call!(Utime::read_from_wire) ~
           seq: le_u64 ~
           prio: le_u8 ~
@@ -285,11 +285,11 @@ impl<'a> CephPrimitive<'a> for Mforward{
 	let compat_version = 1;
 	chain!(input,
 		tid: le_u64 ~
-		client: call!(entity_inst_t::read_from_wire) ~
+		client: call!(EntityInstT::read_from_wire) ~
 		client_caps: call!(MonCap::read_from_wire) ~
 		con_features: le_u64 ~
 		entity_name: call!(EntityNameT::read_from_wire) ~
-		msg: call!(PaxosServiceMessage *::read_from_wire) ~
+		msg: call!(PaxosServiceMessage::read_from_wire) ~
         msg_size: le_u32 ~
 		msg_bl: take!(msg_size),
 		||{
@@ -421,7 +421,7 @@ fn test_ceph_write_Mmoncommand(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mmoncommand{
 	pub fsid: Uuid,
-	pub cmd: cmd,
+	pub cmd: Vec<&'a str>,
 }
 
 impl<'a> CephPrimitive<'a> for Mmoncommand{
@@ -556,7 +556,7 @@ fn test_ceph_write_Mmonscrub(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mmonscrub{
-	pub op: op,
+	pub op: OpTypeT,
 	pub version: u64,
 	pub result: result,
 	pub num_keys: i32,
@@ -775,9 +775,9 @@ impl<'a> CephPrimitive<'a> for Mtimecheck{
 		round: le_u64 ~
 		timestamp: call!(Utime::read_from_wire) ~
 		count: le_u32 ~
-		skews: count!(pair!(entity_inst_t,double), count) ~
+		skews: count!(pair!(EntityInstT,double), count) ~
 		count: le_u32 ~
-		latencies: count!(pair!(entity_inst_t,double), count),
+		latencies: count!(pair!(EntityInstT,double), count),
 		||{
 			Mtimecheck{
 			op: op,
@@ -1127,7 +1127,7 @@ impl<'a> CephPrimitive<'a> for Mmonsync{
 		last_key: pair!(call!(parsestr::read_from_wire),call!(parsestr::read_from_wire)) ~
         chunk_size: le_u32 ~
 		chunk_bl: take!(chunk_size) ~
-		reply_to: call!(entity_inst_t::read_from_wire),
+		reply_to: call!(EntityInstT::read_from_wire),
 		||{
 			Mmonsync{
 			op: op,
@@ -1452,8 +1452,8 @@ impl<'a> CephPrimitive<'a> for Mroute{
 	let compat_version = 1;
 	chain!(input,
 		session_mon_tid: le_u64 ~
-		msg: call!(Message *::read_from_wire) ~
-		dest: call!(entity_inst_t::read_from_wire),
+		msg: call!(Message::read_from_wire) ~
+		dest: call!(EntityInstT::read_from_wire),
 		||{
 			Mroute{
 			HEAD_VERSION: HEAD_VERSION,

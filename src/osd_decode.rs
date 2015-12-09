@@ -498,7 +498,7 @@ fn test_ceph_write_PgNotifyT(){
 pub struct PgNotifyT{
 	pub query_epoch: u32,
 	pub epoch_sent: u32,
-	pub info: info,
+	pub info: PgInfoT,
 	pub to: i8,
 	pub from: i8,
 }
@@ -508,7 +508,7 @@ impl<'a> CephPrimitive<'a> for PgNotifyT{
 	chain!(input,
 		query_epoch: le_u32 ~
 		epoch_sent: le_u32 ~
-		info: PgInfoT ~
+		info: call!(PgInfoT::read_from_wire) ~
 		to: le_i8 ~
 		from: le_i8,
 		||{
@@ -687,7 +687,7 @@ fn test_ceph_write_Pushreplyop(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Pushreplyop{
-	pub soid: soid,
+	pub soid: HObject,
 }
 
 impl<'a> CephPrimitive<'a> for Pushreplyop{
@@ -1044,7 +1044,58 @@ impl<'a> CephPrimitive<'a> for PgLogT{
 		return Ok(buffer);
 	}
 }
+#[derive(Debug,Eq,PartialEq)]
+pub struct pg_hit_set_info_t {
+  pub begin: Utime, //< time interval
+  pub end: Utime,   //< time interval
+  pub version: EversionT,  //< version this HitSet object was written
+  pub using_gmt: u8,       //< use gmt for creating the hit_set archive object name
+}
+impl<'a> CephPrimitive<'a> for pg_hit_set_info_t{
+	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+	chain!(input,
+          begin: call!(Utime::read_from_wire) ~
+          end: call!(Utime::read_from_wire) ~
+          version: call!(EversionT::read_from_wire) ~
+          using_gmt: le_u8,
+		||{
+			pg_hit_set_info_t{
+                begin: begin,
+                end: end,
+                version: version,
+                using_gmt: using_gmt,
+		}
+	})
+}
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+		let mut buffer: Vec<u8> = Vec::new();
+		return Ok(buffer);
+	}
+}
+#[derive(Debug,Eq,PartialEq)]
+pub struct pg_hit_set_history_t {
+  pub current_last_update: EversionT,  //< last version inserted into current set
+  pub history: Vec<pg_hit_set_info_t>  //< archived sets, sorted oldest -> newest
+}
 
+impl<'a> CephPrimitive<'a> for pg_hit_set_history_t{
+	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+	chain!(input,
+          current_last_update: call!(EversionT::read_from_wire) ~
+          hit_count: le_u32 ~
+          history: count!(pg_hit_set_info_t::read_from_wire, hit_count),
+		||{
+			pg_hit_set_history_t{
+              current_last_update: current_last_update,
+              history: history,
+		}
+	})
+}
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+		let mut buffer: Vec<u8> = Vec::new();
+		return Ok(buffer);
+	}
+}
 #[test]
 fn test_ceph_read_pg_info_t(){
 	let bytes = vec![
@@ -1146,14 +1197,17 @@ fn test_ceph_write_PgMissingT(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct PgMissingT{
-	pub rmissing: Vec<(u64, HObject)>,
+	pub rmissing: Vec<(HObject,PgMissingTItem)>,
 }
 
 impl<'a> CephPrimitive<'a> for PgMissingT{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
 		count: le_u32 ~
-		rmissing: count!(pair!(le_u64,hobject_t), count) ,
+		rmissing: count!( //A Vec of pair's.  //TODO This should really be a HashMap
+            pair!(
+                call!(HObject::read_from_wire),
+                call!(PgMissingTItem::read_from_wire)), count),
 		||{
 			PgMissingT{
 			rmissing: rmissing,
@@ -1286,7 +1340,7 @@ pub struct Pushop{
 	pub soid: HObject,
 	pub version: EversionT,
 	pub data: &'a [u8],
-	pub data_included: data_included,
+	pub data_included: Vec<u64>,
 	pub omap_header: &'a [u8],
 	pub omap_entries: Vec<(&'a str, &'a [u8])>,
 	pub attrset: Vec<(&'a str, &'a [u8])>,
@@ -1310,9 +1364,9 @@ impl<'a> CephPrimitive<'a> for Pushop{
 		omap_entries: count!(pair!(parse_str,bufferlist), count) ~
 		count: le_u32 ~
 		attrset: count!(pair!(parse_str,bufferlist), count) ~
-		recovery_info: Objectrecoveryinfo ~
-		before_progress: Objectrecoveryprogress ~
-		after_progress: Objectrecoveryprogress,
+		recovery_info: call!(Objectrecoveryinfo::read_from_wire) ~
+		before_progress: call!(Objectrecoveryprogress::read_from_wire) ~
+		after_progress: call!(Objectrecoveryprogress::read_from_wire),
 		||{
 			Pushop{
 			soid: soid,
@@ -1498,7 +1552,6 @@ impl<'a> CephPrimitive<'a> for PgStatT{
 		return Ok(buffer);
 	}
 }
-*/
 
 #[test]
 fn test_ceph_read_ObjectContextRWState(){
@@ -1524,7 +1577,7 @@ fn test_ceph_write_ObjectcontextRwstate(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct ObjectcontextRwstate{
-	pub state: state,
+	pub state: State,
 	pub count: u64,
 	pub waiters: waiters,
 	pub recovery_read_marker: u8,
@@ -1627,6 +1680,7 @@ impl<'a> CephPrimitive<'a> for ScrubmapObject{
 		return Ok(buffer);
 	}
 }
+*/
 
 #[test]
 fn test_ceph_read_old_pg_t(){
@@ -1650,15 +1704,25 @@ fn test_ceph_write_OldPgT(){
 	//assert_eq!(result, expected_bytes);
 }
 
+/*
+ * placement group.
+ * we encode this into one __le64.
+struct ceph_pg {
+    __le16 preferred; /* preferred primary osd */
+    __le16 ps;        /* placement seed */
+    __le32 pool;      /* object pool */
+} __attribute__ ((packed));
+
+ */
 #[derive(Debug,Eq,PartialEq)]
 pub struct OldPgT{
-	pub v: v,
+	pub v: u64,
 }
 
 impl<'a> CephPrimitive<'a> for OldPgT{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
-		v: call!(ceph_pg::read_from_wire),
+		v: le_u64,
 		||{
 			OldPgT{
 			v: v,
@@ -1695,9 +1759,9 @@ fn test_ceph_write_Pullop(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Pullop{
-	pub soid: soid,
-	pub recovery_info: recovery_info,
-	pub recovery_progress: recovery_progress,
+	pub soid: HObject,
+	pub recovery_info: Objectrecoveryinfo,
+	pub recovery_progress: Objectrecoveryprogress,
 }
 
 impl<'a> CephPrimitive<'a> for Pullop{
@@ -1743,8 +1807,8 @@ fn test_ceph_write_PgMissingTItem(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct PgMissingTItem{
-	pub need: need,
-	pub have: have,
+	pub need: Eversion,
+	pub have: Eversion,
 }
 
 impl<'a> CephPrimitive<'a> for PgMissingTItem{
@@ -4075,14 +4139,17 @@ fn test_ceph_write_Mpgstatsack(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mpgstatsack{
-	pub pg_stat: PgStatT,
+	pub pg_stat: Vec<(PgStatT, (u64, u32))>,
 }
 
 impl<'a> CephPrimitive<'a> for Mpgstatsack{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
 		count: le_u32 ~
-		pg_stat: count!(pair!(g_t,pair<le_u64), count) ,
+		pg_stat: count!(
+            pair!(
+                call!(PgStatT::read_from_wire),
+                pair!(le_u64, le_u32)), count),
 		||{
 			Mpgstatsack{
 			pg_stat: PgStatT,
@@ -4283,7 +4350,7 @@ fn test_ceph_write_Mosdmarkmedown(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mosdmarkmedown{
 	pub fsid: Uuid,
-	pub target_osd: target_osd,
+	pub target_osd: EntityInstT,
 	pub epoch: u32,
 	pub request_ack: u8,
 }
@@ -4292,7 +4359,7 @@ impl<'a> CephPrimitive<'a> for Mosdmarkmedown{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
 		fsid: parse_fsid ~
-		target_osd: call!(entity_inst_t::read_from_wire) ~
+		target_osd: call!(EntityInstT::read_from_wire) ~
 		epoch: le_u32 ~
 		request_ack: le_u8,
 		||{
@@ -4460,6 +4527,7 @@ impl<'a> CephPrimitive<'a> for Mosdecsubopread{
 		return Ok(buffer);
 	}
 }
+/*
 #[test]
 fn test_ceph_read_MOSDPGLog(){
 	let bytes = vec![
@@ -4488,7 +4556,7 @@ pub struct Mosdpglog{
 	pub from: i8,
 	pub info: PgInfoT,
 	pub log: PgLogT,
-	pub missing: pg_missing_t,
+	pub missing: PgMissingTItem,
 	pub past_intervals: pg_interval_map_t,
 }
 
@@ -4517,6 +4585,7 @@ impl<'a> CephPrimitive<'a> for Mosdpglog{
 		return Ok(buffer);
 	}
 }
+*/
 #[test]
 fn test_ceph_read_MGetPoolStatsReply(){
 	let bytes = vec![

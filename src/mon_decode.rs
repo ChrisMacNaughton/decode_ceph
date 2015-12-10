@@ -5,7 +5,7 @@ extern crate uuid;
 use serial;
 
 use self::uuid::{ParseError, Uuid};
-use self::nom::{le_i8, le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16};
+use self::nom::{le_i8, le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16, be_f64};
 use serial::*;
 use common_decode::{EntityNameT, EntityInstT, EversionT};
 
@@ -269,13 +269,129 @@ fn test_ceph_write_Mforward(){
 }
 
 #[derive(Debug,Eq,PartialEq)]
+struct StringConstraint {
+  pub value: &'a str,
+  pub prefix: &'a str,
+}
+
+impl<'a> CephPrimitive<'a> for StringConstraint{
+	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+	chain!(input,
+          value: parse_str ~
+          prefix: parse_str,
+		||{
+			StringConstraint{
+                value: value,
+                prefix: prefix,
+		}
+	})
+}
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+		let mut buffer: Vec<u8> = Vec::new();
+		return Ok(buffer);
+	}
+}
+bitflags!{
+    flags MonCapFlags: u8 {
+        const MON_CAP_R     = (1 << 1),      // read
+        const MON_CAP_W     = (1 << 2),      // write
+        const MON_CAP_X     = (1 << 3),      // execute
+        const MON_CAP_ALL   =
+            MON_CAP_R.bits |
+            MON_CAP_W.bits |
+            MON_CAP_X.bits,
+        const MON_CAP_ANY   = 0xff,          // *
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct MonCapGrant {
+  /*
+   * A grant can come in one of four forms:
+   *
+   *  - a blanket allow ('allow rw', 'allow *')
+   *    - this will match against any service and the read/write/exec flags
+   *      in the mon code.  semantics of what X means are somewhat ad hoc.
+   *
+   *  - a service allow ('allow service mds rw')
+   *    - this will match against a specific service and the r/w/x flags.
+   *
+   *  - a profile ('allow profile osd')
+   *    - this will match against specific monitor-enforced semantics of what
+   *      this type of user should need to do.  examples include 'osd', 'mds',
+   *      'bootstrap-osd'.
+   *
+   *  - a command ('allow command foo', 'allow command bar with arg1=val1 arg2 prefix val2')
+   *      this includes the command name (the prefix string), and a set
+   *      of key/value pairs that constrain use of that command.  if no pairs
+   *      are specified, any arguments are allowed; if a pair is specified, that
+   *      argument must be present and equal or match a prefix.
+   */
+  pub service: &'a str,
+  pub profile: &'a str,
+  pub command: &'a str,
+  pub command_args: Vec<&'a str,StringConstraint>,
+  pub flags: MonCapFlags,
+}
+
+impl<'a> CephPrimitive<'a> for MonCapGrant{
+	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+	chain!(input,
+          service: parse_str ~
+          profile: parse_str ~
+          command: parse_str ~
+          arg_length: le_u32 ~
+          command_args: count!(
+              pair!(parse_str, call!(StringConstraint::read_from_wire)),
+              arg_length) ~
+        flag_bits: le_u8 ~
+        flags: expr_opt!(MonCapFlags::from_bits(flag_bits)),
+		||{
+			MonCapGrant{
+                service: service,
+                profile: profile,
+                command: command,
+                command_args: command_args,
+		}
+	})
+}
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+		let mut buffer: Vec<u8> = Vec::new();
+		return Ok(buffer);
+	}
+}
+#[derive(Debug,Eq,PartialEq)]
+pub struct MonCap {
+    pub text: &'a str,
+    pub grants: Vec<MonCapGrant>,
+}
+
+impl<'a> CephPrimitive<'a> for MonCap{
+	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+	chain!(input,
+		text: parse_str ~
+        grant_length: le_u32 ~
+        grants: count!(call!(MonCapGrant::read_from_wire), grant_length),
+		||{
+			MonCap{
+                text: text,
+                grants: grants,
+		}
+	})
+}
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+		let mut buffer: Vec<u8> = Vec::new();
+		return Ok(buffer);
+	}
+}
+#[derive(Debug,Eq,PartialEq)]
 pub struct Mforward{
 	pub tid: u64,
-	pub client: client,
-	pub client_caps: client_caps,
+	pub client: EntityInstT,
+	pub client_caps: MonCap,
 	pub con_features: u64,
 	pub entity_name: EntityNameT,
-	pub msg: msg,
+	pub msg: Paxosservicemessage,
 	pub msg_bl: &'a [u8],
 }
 
@@ -289,7 +405,7 @@ impl<'a> CephPrimitive<'a> for Mforward{
 		client_caps: call!(MonCap::read_from_wire) ~
 		con_features: le_u64 ~
 		entity_name: call!(EntityNameT::read_from_wire) ~
-		msg: call!(PaxosServiceMessage::read_from_wire) ~
+		msg: call!(Paxosservicemessage::read_from_wire) ~
         msg_size: le_u32 ~
 		msg_bl: take!(msg_size),
 		||{
@@ -555,22 +671,50 @@ fn test_ceph_write_Mmonscrub(){
 }
 
 #[derive(Debug,Eq,PartialEq)]
+struct ScrubResult {
+  prefix_crc: Vec<&'a str,u32>,  //< prefix -> crc
+  prefix_keys: Vec<&'a str,u64>, //< prefix -> key count
+}
+
+impl<'a> CephPrimitive<'a> for ScrubResult{
+	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+	chain!(input,
+		num_crc: le_u32 ~
+        prefix_crc: count!(pair!(parse_str, le_u32), num_crc) ~
+        num_keys: le_u32~
+        prefix_keys: count!(pair!(parse_str, le_u64), num_keys),
+		||{
+			ScrubResult{
+                prefix_crc: prefix_crc,
+                prefix_keys: prefix_keys,
+		}
+	})
+}
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+		let mut buffer: Vec<u8> = Vec::new();
+		return Ok(buffer);
+	}
+}
+
+#[derive(Debug,Eq,PartialEq)]
 pub struct Mmonscrub{
 	pub op: OpTypeT,
 	pub version: u64,
-	pub result: result,
+	pub result: ScrubResult,
 	pub num_keys: i32,
-	pub key: key,
+	pub key: (&'a str, &'a str),
 }
 
 impl<'a> CephPrimitive<'a> for Mmonscrub{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+         let HEAD_VERSION = 2;
+         let COMPAT_VERSION = 1;
 	chain!(input,
 		op: OpTypeT ~
 		version: le_u64 ~
 		result: call!(ScrubResult::read_from_wire) ~
 		num_keys: le_i32 ~
-		key: pair!(call!(parsestr::read_from_wire),call!(parsestr::read_from_wire)),
+		key: pair!(parse_str, parse_str),
 		||{
 			Mmonscrub{
 			op: op,
@@ -610,7 +754,7 @@ fn test_ceph_write_Mmoncommandack(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mmoncommandack{
-	pub cmd: cmd,
+	pub cmd: Vec<&'a str>,
 	pub r: i32,
 	pub rs: &'a str,
 }
@@ -761,9 +905,9 @@ pub struct Mtimecheck{
 	pub op: i32,
 	pub epoch: u64,
 	pub round: u64,
-	pub timestamp: timestamp,
-	pub skews: skews,
-	pub latencies: latencies,
+	pub timestamp: Utime,
+	pub skews: Vec<(EntityInstT, f64)>,
+	pub latencies: Vec<(EntityInstT, f64)>,
 }
 
 impl<'a> CephPrimitive<'a> for Mtimecheck{
@@ -775,9 +919,11 @@ impl<'a> CephPrimitive<'a> for Mtimecheck{
 		round: le_u64 ~
 		timestamp: call!(Utime::read_from_wire) ~
 		count: le_u32 ~
-		skews: count!(pair!(EntityInstT,double), count) ~
+		skews: count!(
+            pair!(call!(EntityInstT::read_from_wire),be_f64), count) ~
 		count: le_u32 ~
-		latencies: count!(pair!(EntityInstT,double), count),
+		latencies: count!(
+            pair!(call!(EntityInstT::read_from_wire),be_f64), count),
 		||{
 			Mtimecheck{
 			op: op,
@@ -822,7 +968,7 @@ pub struct Mmonelection{
 	pub op: i32,
 	pub epoch: u32,
 	pub monmap_bl: &'a [u8],
-	pub quorum: quorum,
+	pub quorum: Vec<i32>,
 	pub quorum_features: u64,
 	pub sharing_bl: &'a [u8],
 	pub defunct_one: u64,
@@ -899,7 +1045,7 @@ pub struct Mmonprobe{
 	pub fsid: Uuid,
 	pub op: i32,
 	pub name: &'a str,
-	pub quorum: quorum,
+	pub quorum: Vec<i32>,
 	pub monmap_bl: &'a [u8],
 	pub paxos_first_version: u64,
 	pub paxos_last_version: u64,
@@ -925,8 +1071,6 @@ impl<'a> CephPrimitive<'a> for Mmonprobe{
 		required_features: le_u64,
 		||{
 			Mmonprobe{
-			HEAD_VERSION: HEAD_VERSION,
-			COMPAT_VERSION: COMPAT_VERSION,
 			fsid: fsid,
 			op: op,
 			name: name,
@@ -968,13 +1112,14 @@ fn test_ceph_write_Mmonmetadata(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mmonmetadata{
-	pub data: data,
+	pub data: Vec<(&'a str, &'a str)>
 }
 
 impl<'a> CephPrimitive<'a> for Mmonmetadata{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
-		data: call!(Metadata::read_from_wire),
+        data_size: le_u32 ~
+		data: count!(pair!(parse_str, parse_str), data_size),
 		||{
 			Mmonmetadata{
 			data: data,
@@ -1013,7 +1158,7 @@ fn test_ceph_write_Mmonjoin(){
 pub struct Mmonjoin{
 	pub fsid: Uuid,
 	pub name: &'a str,
-	pub addr: addr,
+	pub addr: EntityAddr,
 }
 
 impl<'a> CephPrimitive<'a> for Mmonjoin{
@@ -1021,7 +1166,7 @@ impl<'a> CephPrimitive<'a> for Mmonjoin{
 	chain!(input,
 		fsid: parse_fsid ~
 		name: parse_str ~
-		addr: EntityAddr,
+		addr: call!(EntityAddr::read_from_wire),
 		||{
 			Mmonjoin{
 			fsid: fsid,
@@ -1058,10 +1203,100 @@ fn test_ceph_write_Mmonhealth(){
 }
 
 #[derive(Debug,Eq,PartialEq)]
+pub struct ceph_data_stats{
+  pub byte_total: u64,
+  pub byte_used: u64,
+  pub byte_avail: u64,
+  pub avail_percent: i32,
+}
+
+impl<'a> CephPrimitive<'a> for ceph_data_stats{
+	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+	chain!(input,
+          byte_total: le_u64 ~
+          byte_used: le_u64 ~
+          byte_avail: le_u64 ~
+          avail_percent: le_i32,
+		||{
+			ceph_data_stats{
+                byte_total: byte_total,
+                byte_used: byte_used,
+                byte_avail: byte_avail,
+                avail_percent: avail_percent,
+		}
+	})
+}
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+		let mut buffer: Vec<u8> = Vec::new();
+		return Ok(buffer);
+	}
+}
+#[derive(Debug,Eq,PartialEq)]
+pub struct DataStats {
+  pub fs_stats: ceph_data_stats,
+  // data dir
+  pub last_update: Utime,
+  pub store_stats: LevelDBStoreStats
+}
+impl<'a> CephPrimitive<'a> for DataStats{
+	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+	chain!(input,
+        fs_stats: call!(ceph_data_stats::read_from_wire) ~
+        last_update: call!(Utime::read_from_wire) ~
+        store_stats: call!(LevelDBStoreStats::read_from_wire),
+		||{
+			DataStats{
+                fs_stats: fs_stats,
+                last_update: last_update,
+                store_stats: store_stats,
+		}
+	})
+}
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+		let mut buffer: Vec<u8> = Vec::new();
+		return Ok(buffer);
+	}
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct LevelDBStoreStats {
+  pub bytes_total: u64,
+  pub bytes_sst: u64,
+  pub bytes_log: u64,
+  pub bytes_misc: u64,
+  pub last_update: Utime,
+}
+
+impl<'a> CephPrimitive<'a> for LevelDBStoreStats{
+	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+	chain!(input,
+          bytes_total: le_u64 ~
+          bytes_sst: le_u64 ~
+          bytes_log: le_u64 ~
+          bytes_misc: le_u64 ~
+          last_update: call!(Utime::read_from_wire),
+		||{
+			LevelDBStoreStats{
+              bytes_total: bytes_total,
+              bytes_sst: bytes_sst,
+              bytes_log: bytes_log,
+              bytes_misc: bytes_misc,
+              last_update: last_update,
+		}
+	})
+}
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+		let mut buffer: Vec<u8> = Vec::new();
+		return Ok(buffer);
+	}
+}
+
+
+#[derive(Debug,Eq,PartialEq)]
 pub struct Mmonhealth{
 	pub service_type: i32,
 	pub service_op: i32,
-	pub data_stats: data_stats,
+	pub data_stats: DataStats,
 }
 
 impl<'a> CephPrimitive<'a> for Mmonhealth{
@@ -1073,7 +1308,6 @@ impl<'a> CephPrimitive<'a> for Mmonhealth{
 		data_stats: call!(DataStats::read_from_wire),
 		||{
 			Mmonhealth{
-			HEAD_VERSION: HEAD_VERSION,
 			service_type: service_type,
 			service_op: service_op,
 			data_stats: data_stats,
@@ -1113,9 +1347,9 @@ pub struct Mmonsync{
 	pub op: u32,
 	pub cookie: u64,
 	pub last_committed: u64,
-	pub last_key: last_key,
+	pub last_key: (&'a str, &'a str),
 	pub chunk_bl: &'a [u8],
-	pub reply_to: reply_to,
+	pub reply_to: EntityInstT,
 }
 
 impl<'a> CephPrimitive<'a> for Mmonsync{
@@ -1124,7 +1358,7 @@ impl<'a> CephPrimitive<'a> for Mmonsync{
 		op: le_u32 ~
 		cookie: le_u64 ~
 		last_committed: le_u64 ~
-		last_key: pair!(call!(parsestr::read_from_wire),call!(parsestr::read_from_wire)) ~
+		last_key: pair!(parse_str,parse_str) ~
         chunk_size: le_u32 ~
 		chunk_bl: take!(chunk_size) ~
 		reply_to: call!(EntityInstT::read_from_wire),
@@ -1175,8 +1409,8 @@ pub struct Mmonpaxos{
 	pub pn_from: u64,        // i promise to accept after
 	pub pn: u64,             // with with proposal
 	pub uncommitted_pn: u64, // previous pn, if we are a LAST with an uncommitted value
-	pub lease_timestamp: lease_timestamp,
-	pub sent_timestamp: sent_timestamp,
+	pub lease_timestamp: Utime,
+	pub sent_timestamp: Utime,
 	pub latest_version: u64,
 	pub latest_value: &'a [u8],
 	pub values: Vec<&'a str>,
@@ -1221,6 +1455,7 @@ impl<'a> CephPrimitive<'a> for Mmonpaxos{
 		return Ok(buffer);
 	}
 }
+/*
 #[test]
 fn test_ceph_read_MClientQuota(){
 	let bytes = vec![
@@ -1269,6 +1504,7 @@ impl<'a> CephPrimitive<'a> for Mclientquota{
 		return Ok(buffer);
 	}
 }
+*/
 #[test]
 fn test_ceph_read_MAuth(){
 	let bytes = vec![
@@ -1442,8 +1678,8 @@ fn test_ceph_write_Mroute(){
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mroute{
 	pub session_mon_tid: u64,
-	pub msg: msg,
-	pub dest: dest,
+	pub msg: &'a str,
+	pub dest: EntityInstT,
 }
 
 impl<'a> CephPrimitive<'a> for Mroute{
@@ -1452,12 +1688,10 @@ impl<'a> CephPrimitive<'a> for Mroute{
 	let compat_version = 1;
 	chain!(input,
 		session_mon_tid: le_u64 ~
-		msg: call!(Message::read_from_wire) ~
+		msg: parse_str ~
 		dest: call!(EntityInstT::read_from_wire),
 		||{
 			Mroute{
-			HEAD_VERSION: HEAD_VERSION,
-			COMPAT_VERSION: COMPAT_VERSION,
 			session_mon_tid: session_mon_tid,
 			msg: msg,
 			dest: dest,

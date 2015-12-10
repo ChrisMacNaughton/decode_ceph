@@ -125,15 +125,15 @@ fn test_ceph_write_EntityInstT(){
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct EntityInstT{
-	pub name: name,
-	pub addr: addr,
+	pub name: EntityNameT,
+	pub addr: EntityAddr,
 }
 
 impl<'a> CephPrimitive<'a> for EntityInstT{
 	fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
 	chain!(input,
-		name: EntityNameT ~
-		addr: EntityAddr,
+		name: call!(EntityNameT::read_from_wire) ~
+		addr: call!(EntityAddr::read_from_wire),
 		||{
 			EntityInstT{
 			name: name,

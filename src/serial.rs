@@ -1181,15 +1181,6 @@ pub enum CephEntity{
 }
 }
 enum_from_primitive!{
-#[repr(u8)]
-#[derive(Debug, Clone,Eq,PartialEq)]
-pub enum OpTypeT{
-    OP_SCRUB = 1,         // leader->peon: scrub (a range of) keys
-    OP_RESULT = 2,        // peon->leader: result of a scrub
-}
-}
-
-enum_from_primitive!{
 #[repr(u32)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum Crypto {

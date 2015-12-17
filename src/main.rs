@@ -58,7 +58,8 @@ mod tests{
         };
         //Set the cursor so the parsing doesn't fail
         let mut cap = Capture::from_file(Path::new("ceph.pcap")).unwrap();
-        while let Some(packet) = cap.next() {
+        /*
+        while let Ok(packet) = cap.next() {
             match serial::parse_ceph_packet(&packet.data) {
                 nom::IResult::Done(_, result) => {
                     println!("logging {:?}", result);
@@ -69,6 +70,7 @@ mod tests{
                 // _ => trace!("Error while parsing packet")
             }
         }
+        */
     }
 }
 
@@ -345,7 +347,7 @@ fn main() {
             loop {
                 match cap.next(){
                     //We received a packet
-                    Some(packet) =>{
+                    Ok(packet) =>{
                         match serial::parse_ceph_packet(&packet.data) {
                             nom::IResult::Done(_, result) => {
                                 trace!("logging {:?}", result);
@@ -356,7 +358,7 @@ fn main() {
                         // break
                     },
                     //We missed a packet, ignore
-                    None => {},
+                    Err(_) => {},
                 }
             }
         }

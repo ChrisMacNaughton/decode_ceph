@@ -427,7 +427,7 @@ fn test_encrypt(){
 }
 // Encrypt a buffer with the given key and iv using
 // AES-128/CBC/Pkcs encryption.
-fn encrypt(data: &[u8], ceph_key: &[u8]) -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
+pub fn encrypt(data: &[u8], ceph_key: &[u8]) -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
 
     // Create an encryptor instance of the best performing
     // type available for the platform.

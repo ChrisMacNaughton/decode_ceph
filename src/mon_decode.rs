@@ -1,12 +1,15 @@
 #![recursion_limit="9000"]
 extern crate nom;
+extern crate num;
 extern crate uuid;
 
 use serial;
-
-use self::uuid::{ParseError, Uuid};
+use self::num::FromPrimitive;
 use self::nom::{le_i8, le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16, be_f64};
+use self::uuid::{ParseError, Uuid};
+use self::nom::IResult::Done;
 use serial::*;
+use std::u16;
 use common_decode::{EntityNameT, EntityInstT, EversionT};
 
 enum_from_primitive!{
@@ -20,36 +23,37 @@ pub enum OpTypeT{
 
 #[test]
 fn test_ceph_read_MLog() {
-    let bytes = vec![];
+    ////let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mlog::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mlog::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    ////assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mlog() {
-    let expected_bytes = vec![];
-    let result = Mlog::write_to_wire();
-    println!("ceph_write_Mlog{:?}", result);
+    //let bytes = vec![];
+    //let result = Mlog::write_to_wire();
+    //println!("ceph_write_Mlog{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 enum_from_primitive!{
-#[repr(u8)]
+#[repr(u16)]
 #[derive(Debug, Clone,Eq,PartialEq)]
-enum CLogType {
+pub enum CLogType {
   CLOG_DEBUG = 0,
   CLOG_INFO = 1,
   CLOG_SEC = 2,
   CLOG_WARN = 3,
   CLOG_ERROR = 4,
-  CLOG_UNKNOWN = -1,
+  CLOG_UNKNOWN = u16::MAX,
 }
 }
 
-pub struct LogEntry {
+#[derive(Debug,Eq,PartialEq)]
+pub struct LogEntry<'a> {
     pub who: EntityInstT,
     pub stamp: Utime,
     pub seq: u64,
@@ -57,13 +61,14 @@ pub struct LogEntry {
     pub msg: &'a str,
     pub channel: &'a str,
 }
-impl<'a> CephPrimitive<'a> for LogEntry {
+impl<'a> CephPrimitive<'a> for LogEntry<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
           who: call!(EntityInstT::read_from_wire)~
           stamp: call!(Utime::read_from_wire) ~
           seq: le_u64 ~
-          prio: le_u8 ~
+          prio_bits: le_u16 ~
+          prio: expr_opt!(CLogType::from_u16(prio_bits)) ~
           msg: parse_str ~
           channel: parse_str,
 		||{
@@ -83,17 +88,17 @@ impl<'a> CephPrimitive<'a> for LogEntry {
     }
 }
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mlog {
+pub struct Mlog<'a> {
     pub fsid: Uuid,
-    pub entries: Vec<LogEntry>,
+    pub entries: Vec<LogEntry<'a>>,
 }
 
-impl<'a> CephPrimitive<'a> for Mlog {
+impl<'a> CephPrimitive<'a> for Mlog<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		fsid: parse_fsid ~
         count: le_u32 ~
-		entries: count!(LogEntry::read_from_wire, count),
+		entries: count!(LogEntry::read_from_wire, count as usize),
 		||{
 			Mlog{
 			fsid: fsid,
@@ -108,19 +113,19 @@ impl<'a> CephPrimitive<'a> for Mlog {
 }
 #[test]
 fn test_ceph_read_MMonGetVersionReply() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmongetversionreply::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmongetversionreply::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmongetversionreply() {
-    let expected_bytes = vec![];
-    let result = Mmongetversionreply::write_to_wire();
-    println!("ceph_write_Mmongetversionreply{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmongetversionreply::write_to_wire();
+    //println!("ceph_write_Mmongetversionreply{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
@@ -152,19 +157,19 @@ impl<'a> CephPrimitive<'a> for Mmongetversionreply {
 }
 #[test]
 fn test_ceph_read_PaxosServiceMessage() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Paxosservicemessage::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Paxosservicemessage::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Paxosservicemessage() {
-    let expected_bytes = vec![];
-    let result = Paxosservicemessage::write_to_wire();
-    println!("ceph_write_Paxosservicemessage{:?}", result);
+    //let bytes = vec![];
+    //let result = Paxosservicemessage::write_to_wire();
+    //println!("ceph_write_Paxosservicemessage{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
@@ -199,34 +204,34 @@ impl<'a> CephPrimitive<'a> for Paxosservicemessage {
 }
 #[test]
 fn test_ceph_read_MCommand() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mcommand::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mcommand::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mcommand() {
-    let expected_bytes = vec![];
-    let result = Mcommand::write_to_wire();
-    println!("ceph_write_Mcommand{:?}", result);
+    //let bytes = vec![];
+    //let result = Mcommand::write_to_wire();
+    //println!("ceph_write_Mcommand{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mcommand {
+pub struct Mcommand<'a> {
     pub fsid: Uuid,
     pub cmd: Vec<&'a str>,
 }
 
-impl<'a> CephPrimitive<'a> for Mcommand {
+impl<'a> CephPrimitive<'a> for Mcommand<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		fsid: parse_fsid ~
 		count: le_u32~
-		cmd: count!(parse_str, count),
+		cmd: count!(parse_str, count as usize),
 		||{
 			Mcommand{
 			fsid: fsid,
@@ -241,29 +246,29 @@ impl<'a> CephPrimitive<'a> for Mcommand {
 }
 #[test]
 fn test_ceph_read_MForward() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mforward::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mforward::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mforward() {
-    let expected_bytes = vec![];
-    let result = Mforward::write_to_wire();
-    println!("ceph_write_Mforward{:?}", result);
+    //let bytes = vec![];
+    //let result = Mforward::write_to_wire();
+    //println!("ceph_write_Mforward{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-struct StringConstraint {
+pub struct StringConstraint<'a> {
     pub value: &'a str,
     pub prefix: &'a str,
 }
 
-impl<'a> CephPrimitive<'a> for StringConstraint {
+impl<'a> CephPrimitive<'a> for StringConstraint<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
           value: parse_str ~
@@ -294,7 +299,7 @@ bitflags!{
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct MonCapGrant {
+pub struct MonCapGrant<'a> {
     //
     // A grant can come in one of four forms:
     //
@@ -319,11 +324,11 @@ pub struct MonCapGrant {
     pub service: &'a str,
     pub profile: &'a str,
     pub command: &'a str,
-    pub command_args: Vec<&'a str, StringConstraint>,
+    pub command_args: Vec<(&'a str, StringConstraint<'a>)>,
     pub flags: MonCapFlags,
 }
 
-impl<'a> CephPrimitive<'a> for MonCapGrant {
+impl<'a> CephPrimitive<'a> for MonCapGrant<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
           service: parse_str ~
@@ -332,7 +337,7 @@ impl<'a> CephPrimitive<'a> for MonCapGrant {
           arg_length: le_u32 ~
           command_args: count!(
               pair!(parse_str, call!(StringConstraint::read_from_wire)),
-              arg_length) ~
+              arg_length as usize) ~
         flag_bits: le_u8 ~
         flags: expr_opt!(MonCapFlags::from_bits(flag_bits)),
 		||{
@@ -341,6 +346,7 @@ impl<'a> CephPrimitive<'a> for MonCapGrant {
                 profile: profile,
                 command: command,
                 command_args: command_args,
+                flags: flags,
 		}
 	})
     }
@@ -350,17 +356,17 @@ impl<'a> CephPrimitive<'a> for MonCapGrant {
     }
 }
 #[derive(Debug,Eq,PartialEq)]
-pub struct MonCap {
+pub struct MonCap<'a> {
     pub text: &'a str,
-    pub grants: Vec<MonCapGrant>,
+    pub grants: Vec<MonCapGrant<'a>>,
 }
 
-impl<'a> CephPrimitive<'a> for MonCap {
+impl<'a> CephPrimitive<'a> for MonCap<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		text: parse_str ~
         grant_length: le_u32 ~
-        grants: count!(call!(MonCapGrant::read_from_wire), grant_length),
+        grants: count!(call!(MonCapGrant::read_from_wire), grant_length as usize),
 		||{
 			MonCap{
                 text: text,
@@ -374,17 +380,17 @@ impl<'a> CephPrimitive<'a> for MonCap {
     }
 }
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mforward {
+pub struct Mforward<'a> {
     pub tid: u64,
     pub client: EntityInstT,
-    pub client_caps: MonCap,
+    pub client_caps: MonCap<'a>,
     pub con_features: u64,
     pub entity_name: EntityNameT,
     pub msg: Paxosservicemessage,
     pub msg_bl: &'a [u8],
 }
 
-impl<'a> CephPrimitive<'a> for Mforward {
+impl<'a> CephPrimitive<'a> for Mforward<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         let head_version = 1;
         let compat_version = 1;
@@ -416,19 +422,19 @@ impl<'a> CephPrimitive<'a> for Mforward {
 }
 #[test]
 fn test_ceph_read_MMonGlobalID() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmonglobalid::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmonglobalid::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmonglobalid() {
-    let expected_bytes = vec![];
-    let result = Mmonglobalid::write_to_wire();
-    println!("ceph_write_Mmonglobalid{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmonglobalid::write_to_wire();
+    //println!("ceph_write_Mmonglobalid{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
@@ -454,29 +460,29 @@ impl<'a> CephPrimitive<'a> for Mmonglobalid {
 }
 #[test]
 fn test_ceph_read_MMonGetVersion() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmongetversion::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmongetversion::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmongetversion() {
-    let expected_bytes = vec![];
-    let result = Mmongetversion::write_to_wire();
-    println!("ceph_write_Mmongetversion{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmongetversion::write_to_wire();
+    //println!("ceph_write_Mmongetversion{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mmongetversion {
+pub struct Mmongetversion<'a> {
     pub handle: u64,
     pub what: &'a str,
 }
 
-impl<'a> CephPrimitive<'a> for Mmongetversion {
+impl<'a> CephPrimitive<'a> for Mmongetversion<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		handle: le_u64 ~
@@ -495,34 +501,34 @@ impl<'a> CephPrimitive<'a> for Mmongetversion {
 }
 #[test]
 fn test_ceph_read_MMonCommand() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmoncommand::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmoncommand::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmoncommand() {
-    let expected_bytes = vec![];
-    let result = Mmoncommand::write_to_wire();
-    println!("ceph_write_Mmoncommand{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmoncommand::write_to_wire();
+    //println!("ceph_write_Mmoncommand{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mmoncommand {
+pub struct Mmoncommand<'a> {
     pub fsid: Uuid,
     pub cmd: Vec<&'a str>,
 }
 
-impl<'a> CephPrimitive<'a> for Mmoncommand {
+impl<'a> CephPrimitive<'a> for Mmoncommand<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		fsid: parse_fsid ~
 		count: le_u32 ~
-		cmd: count!(parse_str, count),
+		cmd: count!(parse_str, count as usize),
 		||{
 			Mmoncommand{
 			fsid: fsid,
@@ -537,19 +543,19 @@ impl<'a> CephPrimitive<'a> for Mmoncommand {
 }
 #[test]
 fn test_ceph_read_MMonSubscribeAck() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmonsubscribeack::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmonsubscribeack::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmonsubscribeack() {
-    let expected_bytes = vec![];
-    let result = Mmonsubscribeack::write_to_wire();
-    println!("ceph_write_Mmonsubscribeack{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmonsubscribeack::write_to_wire();
+    //println!("ceph_write_Mmonsubscribeack{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
@@ -578,19 +584,19 @@ impl<'a> CephPrimitive<'a> for Mmonsubscribeack {
 }
 #[test]
 fn test_ceph_read_MMonQuorumService() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmonquorumservice::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmonquorumservice::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmonquorumservice() {
-    let expected_bytes = vec![];
-    let result = Mmonquorumservice::write_to_wire();
-    println!("ceph_write_Mmonquorumservice{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmonquorumservice::write_to_wire();
+    //println!("ceph_write_Mmonquorumservice{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
@@ -619,35 +625,35 @@ impl<'a> CephPrimitive<'a> for Mmonquorumservice {
 }
 #[test]
 fn test_ceph_read_MMonScrub() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmonscrub::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmonscrub::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmonscrub() {
-    let expected_bytes = vec![];
-    let result = Mmonscrub::write_to_wire();
-    println!("ceph_write_Mmonscrub{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmonscrub::write_to_wire();
+    //println!("ceph_write_Mmonscrub{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-struct ScrubResult {
-    prefix_crc: Vec<&'a str, u32>, // < prefix -> crc
-    prefix_keys: Vec<&'a str, u64>, // < prefix -> key count
+pub struct ScrubResult<'a> {
+    pub prefix_crc: Vec<(&'a str, u32)>, // < prefix -> crc
+    pub prefix_keys: Vec<(&'a str, u64)>, // < prefix -> key count
 }
 
-impl<'a> CephPrimitive<'a> for ScrubResult {
+impl<'a> CephPrimitive<'a> for ScrubResult<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		num_crc: le_u32 ~
-        prefix_crc: count!(pair!(parse_str, le_u32), num_crc) ~
+        prefix_crc: count!(pair!(parse_str, le_u32), num_crc as usize) ~
         num_keys: le_u32~
-        prefix_keys: count!(pair!(parse_str, le_u64), num_keys),
+        prefix_keys: count!(pair!(parse_str, le_u64), num_keys as usize),
 		||{
 			ScrubResult{
                 prefix_crc: prefix_crc,
@@ -662,21 +668,21 @@ impl<'a> CephPrimitive<'a> for ScrubResult {
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mmonscrub {
+pub struct Mmonscrub<'a> {
     pub op: OpTypeT,
     pub version: u64,
-    pub result: ScrubResult,
+    pub result: ScrubResult<'a>,
     pub num_keys: i32,
     pub key: (&'a str, &'a str),
 }
 
-impl<'a> CephPrimitive<'a> for Mmonscrub {
+impl<'a> CephPrimitive<'a> for Mmonscrub<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         let HEAD_VERSION = 2;
         let COMPAT_VERSION = 1;
         chain!(input,
         op_bits: le_u8~
-		op: opt!(OpTypeT::from_u8(op_bits)) ~
+		op: expr_opt!(OpTypeT::from_u8(op_bits)) ~
 		version: le_u64 ~
 		result: call!(ScrubResult::read_from_wire) ~
 		num_keys: le_i32 ~
@@ -698,34 +704,34 @@ impl<'a> CephPrimitive<'a> for Mmonscrub {
 }
 #[test]
 fn test_ceph_read_MMonCommandAck() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmoncommandack::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmoncommandack::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmoncommandack() {
-    let expected_bytes = vec![];
-    let result = Mmoncommandack::write_to_wire();
-    println!("ceph_write_Mmoncommandack{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmoncommandack::write_to_wire();
+    //println!("ceph_write_Mmoncommandack{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mmoncommandack {
+pub struct Mmoncommandack<'a> {
     pub cmd: Vec<&'a str>,
     pub r: i32,
     pub rs: &'a str,
 }
 
-impl<'a> CephPrimitive<'a> for Mmoncommandack {
+impl<'a> CephPrimitive<'a> for Mmoncommandack<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		count: le_u32 ~
-		cmd: count!(parse_str, count)~
+		cmd: count!(parse_str, count as usize)~
 		r: le_i32 ~
 		rs: parse_str,
 		||{
@@ -744,28 +750,28 @@ impl<'a> CephPrimitive<'a> for Mmoncommandack {
 
 #[test]
 fn test_ceph_read_MMonMap() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmonmap::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmonmap::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmonmap() {
-    let expected_bytes = vec![];
-    let result = Mmonmap::write_to_wire();
-    println!("ceph_write_Mmonmap{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmonmap::write_to_wire();
+    //println!("ceph_write_Mmonmap{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mmonmap {
+pub struct Mmonmap<'a> {
     pub monmapbl: &'a [u8],
 }
 
-impl<'a> CephPrimitive<'a> for Mmonmap {
+impl<'a> CephPrimitive<'a> for Mmonmap<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
         monmap_size: le_u32 ~
@@ -783,24 +789,24 @@ impl<'a> CephPrimitive<'a> for Mmonmap {
 }
 #[test]
 fn test_ceph_read_MAuthReply() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mauthreply::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mauthreply::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mauthreply() {
-    let expected_bytes = vec![];
-    let result = Mauthreply::write_to_wire();
-    println!("ceph_write_Mauthreply{:?}", result);
+    //let bytes = vec![];
+    //let result = Mauthreply::write_to_wire();
+    //println!("ceph_write_Mauthreply{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mauthreply {
+pub struct Mauthreply<'a> {
     pub protocol: u32,
     pub result: i32,
     pub global_id: u64,
@@ -808,7 +814,7 @@ pub struct Mauthreply {
     pub result_bl: &'a [u8],
 }
 
-impl<'a> CephPrimitive<'a> for Mauthreply {
+impl<'a> CephPrimitive<'a> for Mauthreply<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		protocol: le_u32 ~
@@ -834,23 +840,23 @@ impl<'a> CephPrimitive<'a> for Mauthreply {
 }
 #[test]
 fn test_ceph_read_MTimeCheck() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mtimecheck::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mtimecheck::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mtimecheck() {
-    let expected_bytes = vec![];
-    let result = Mtimecheck::write_to_wire();
-    println!("ceph_write_Mtimecheck{:?}", result);
+    //let bytes = vec![];
+    //let result = Mtimecheck::write_to_wire();
+    //println!("ceph_write_Mtimecheck{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
-#[derive(Debug,Eq,PartialEq)]
+#[derive(Debug,PartialEq)]
 pub struct Mtimecheck {
     pub op: i32,
     pub epoch: u64,
@@ -870,10 +876,10 @@ impl<'a> CephPrimitive<'a> for Mtimecheck {
 		timestamp: call!(Utime::read_from_wire) ~
 		count: le_u32 ~
 		skews: count!(
-            pair!(call!(EntityInstT::read_from_wire),be_f64), count) ~
+            pair!(call!(EntityInstT::read_from_wire),be_f64), count as usize) ~
 		count: le_u32 ~
 		latencies: count!(
-            pair!(call!(EntityInstT::read_from_wire),be_f64), count),
+            pair!(call!(EntityInstT::read_from_wire),be_f64), count as usize),
 		||{
 			Mtimecheck{
 			op: op,
@@ -892,24 +898,24 @@ impl<'a> CephPrimitive<'a> for Mtimecheck {
 }
 #[test]
 fn test_ceph_read_MMonElection() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmonelection::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmonelection::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmonelection() {
-    let expected_bytes = vec![];
-    let result = Mmonelection::write_to_wire();
-    println!("ceph_write_Mmonelection{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmonelection::write_to_wire();
+    //println!("ceph_write_Mmonelection{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mmonelection {
+pub struct Mmonelection<'a> {
     pub fsid: Uuid,
     pub op: i32,
     pub epoch: u32,
@@ -921,7 +927,7 @@ pub struct Mmonelection {
     pub defunct_two: u64,
 }
 
-impl<'a> CephPrimitive<'a> for Mmonelection {
+impl<'a> CephPrimitive<'a> for Mmonelection<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         let OP_PROPOSE = 1;
         let OP_ACK = 1;
@@ -934,7 +940,7 @@ impl<'a> CephPrimitive<'a> for Mmonelection {
         monmap_size: le_u32 ~
 		monmap_bl: take!(monmap_size) ~
 		count: le_u32 ~
-		quorum: count!(le_i32,count) ~
+		quorum: count!(le_i32,count as usize) ~
 		quorum_features: le_u64 ~
         sharing_size: le_u32 ~
 		sharing_bl: take!(sharing_size) ~
@@ -942,10 +948,6 @@ impl<'a> CephPrimitive<'a> for Mmonelection {
 		defunct_two: le_u64,
 		||{
 			Mmonelection{
-			OP_PROPOSE: OP_PROPOSE,
-			OP_ACK: OP_ACK,
-			OP_NAK: OP_NAK,
-			OP_VICTORY: OP_VICTORY,
 			fsid: fsid,
 			op: op,
 			epoch: epoch,
@@ -966,24 +968,24 @@ impl<'a> CephPrimitive<'a> for Mmonelection {
 
 #[test]
 fn test_ceph_read_MMonProbe() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmonprobe::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmonprobe::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmonprobe() {
-    let expected_bytes = vec![];
-    let result = Mmonprobe::write_to_wire();
-    println!("ceph_write_Mmonprobe{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmonprobe::write_to_wire();
+    //println!("ceph_write_Mmonprobe{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mmonprobe {
+pub struct Mmonprobe<'a> {
     pub fsid: Uuid,
     pub op: i32,
     pub name: &'a str,
@@ -995,7 +997,7 @@ pub struct Mmonprobe {
     pub required_features: u64,
 }
 
-impl<'a> CephPrimitive<'a> for Mmonprobe {
+impl<'a> CephPrimitive<'a> for Mmonprobe<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         let head_version = 1;
         let compat_version = 1;
@@ -1004,7 +1006,7 @@ impl<'a> CephPrimitive<'a> for Mmonprobe {
 		op: le_i32 ~
 		name: parse_str ~
 		count: le_u32 ~
-		quorum: count!(le_i32,count) ~
+		quorum: count!(le_i32,count as usize) ~
         monmap_size: le_u32 ~
 		monmap_bl: take!(monmap_size) ~
 		paxos_first_version: le_u64 ~
@@ -1032,32 +1034,32 @@ impl<'a> CephPrimitive<'a> for Mmonprobe {
 }
 #[test]
 fn test_ceph_read_MMonMetadata() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmonmetadata::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmonmetadata::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmonmetadata() {
-    let expected_bytes = vec![];
-    let result = Mmonmetadata::write_to_wire();
-    println!("ceph_write_Mmonmetadata{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmonmetadata::write_to_wire();
+    //println!("ceph_write_Mmonmetadata{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mmonmetadata {
+pub struct Mmonmetadata<'a> {
     pub data: Vec<(&'a str, &'a str)>,
 }
 
-impl<'a> CephPrimitive<'a> for Mmonmetadata {
+impl<'a> CephPrimitive<'a> for Mmonmetadata<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
         data_size: le_u32 ~
-		data: count!(pair!(parse_str, parse_str), data_size),
+		data: count!(pair!(parse_str, parse_str), data_size as usize),
 		||{
 			Mmonmetadata{
 			data: data,
@@ -1072,30 +1074,30 @@ impl<'a> CephPrimitive<'a> for Mmonmetadata {
 
 #[test]
 fn test_ceph_read_MMonJoin() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmonjoin::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmonjoin::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmonjoin() {
-    let expected_bytes = vec![];
-    let result = Mmonjoin::write_to_wire();
-    println!("ceph_write_Mmonjoin{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmonjoin::write_to_wire();
+    //println!("ceph_write_Mmonjoin{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mmonjoin {
+pub struct Mmonjoin<'a> {
     pub fsid: Uuid,
     pub name: &'a str,
     pub addr: EntityAddr,
 }
 
-impl<'a> CephPrimitive<'a> for Mmonjoin {
+impl<'a> CephPrimitive<'a> for Mmonjoin<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		fsid: parse_fsid ~
@@ -1116,19 +1118,19 @@ impl<'a> CephPrimitive<'a> for Mmonjoin {
 }
 #[test]
 fn test_ceph_read_MMonHealth() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmonhealth::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmonhealth::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmonhealth() {
-    let expected_bytes = vec![];
-    let result = Mmonhealth::write_to_wire();
-    println!("ceph_write_Mmonhealth{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmonhealth::write_to_wire();
+    //println!("ceph_write_Mmonhealth{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
@@ -1252,24 +1254,24 @@ impl<'a> CephPrimitive<'a> for Mmonhealth {
 
 #[test]
 fn test_ceph_read_MMonSync() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmonsync::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmonsync::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmonsync() {
-    let expected_bytes = vec![];
-    let result = Mmonsync::write_to_wire();
-    println!("ceph_write_Mmonsync{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmonsync::write_to_wire();
+    //println!("ceph_write_Mmonsync{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mmonsync {
+pub struct Mmonsync<'a> {
     pub op: u32,
     pub cookie: u64,
     pub last_committed: u64,
@@ -1278,7 +1280,7 @@ pub struct Mmonsync {
     pub reply_to: EntityInstT,
 }
 
-impl<'a> CephPrimitive<'a> for Mmonsync {
+impl<'a> CephPrimitive<'a> for Mmonsync<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		op: le_u32 ~
@@ -1306,25 +1308,25 @@ impl<'a> CephPrimitive<'a> for Mmonsync {
 }
 #[test]
 fn test_ceph_read_MMonPaxos() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mmonpaxos::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mmonpaxos::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mmonpaxos() {
-    let expected_bytes = vec![];
-    let result = Mmonpaxos::write_to_wire();
-    println!("ceph_write_Mmonpaxos{:?}", result);
+    //let bytes = vec![];
+    //let result = Mmonpaxos::write_to_wire();
+    //println!("ceph_write_Mmonpaxos{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 enum_from_primitive!{
 #[repr(i32)]
 #[derive(Debug, Clone, Eq, PartialEq)]
-enum PaxosOperation {
+pub enum PaxosOperation {
      OP_COLLECT =   1, // proposer: propose round
      OP_LAST =      2, // voter:    accept proposed round
      OP_BEGIN =     3, // proposer: value proposed for this round
@@ -1336,7 +1338,7 @@ enum PaxosOperation {
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mmonpaxos {
+pub struct Mmonpaxos<'a> {
     pub epoch: u32,
     pub op: PaxosOperation,
     pub first_committed: u64, // i've committed to
@@ -1351,7 +1353,7 @@ pub struct Mmonpaxos {
     pub values: Vec<&'a str>,
 }
 
-impl<'a> CephPrimitive<'a> for Mmonpaxos {
+impl<'a> CephPrimitive<'a> for Mmonpaxos<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         let HEAD_VERSION = 3;
         let COMPAT_VERSION = 3;
@@ -1372,7 +1374,7 @@ impl<'a> CephPrimitive<'a> for Mmonpaxos {
 		count: le_u32 ~
 		count!(
             pair!(le_u64,
-                take!(10)), count),
+                take!(10)), count as usize),
 		||{
 			Mmonpaxos{
 			epoch: epoch,
@@ -1398,23 +1400,23 @@ impl<'a> CephPrimitive<'a> for Mmonpaxos {
 //
 // #[test]
 // fn test_ceph_read_MClientQuota(){
-// let bytes = vec![
+// //let bytes = vec![
 // TODO: fill in test data here
 // ];
 // let x: &[u8] = &[];
 // let expected_result = "";
-// let result = Mclientquota::read_from_wire(&bytes);
-// println!("ceph_connect_reply: {:?}", result);
-// assert_eq!(Done(x, expected_result), result);
+// //let result = Mclientquota::read_from_wire(&bytes);
+// //println!("ceph_connect_reply: {:?}", result);
+// //assert_eq!(Done(x, expected_result), result);
 // }
 //
 // #[test]
 // fn test_ceph_write_Mclientquota(){
-// let expected_bytes = vec![
+// //let bytes = vec![
 // TODO: fill in result data here
 // ];
-// let result = Mclientquota::write_to_wire();
-// println!("ceph_write_Mclientquota{:?}", result);
+// //let result = Mclientquota::write_to_wire();
+// //println!("ceph_write_Mclientquota{:?}", result);
 // assert_eq!(result, expected_bytes);
 // }
 //
@@ -1447,30 +1449,30 @@ impl<'a> CephPrimitive<'a> for Mmonpaxos {
 //
 #[test]
 fn test_ceph_read_MAuth() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = Mauth::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mauth::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mauth() {
-    let expected_bytes = vec![];
-    let result = Mauth::write_to_wire();
-    println!("ceph_write_Mauth{:?}", result);
+    //let bytes = vec![];
+    //let result = Mauth::write_to_wire();
+    //println!("ceph_write_Mauth{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mauth {
+pub struct Mauth<'a> {
     pub protocol: u32,
     pub auth_payload: &'a [u8],
     pub monmap_epoch: u32,
 }
 
-impl<'a> CephPrimitive<'a> for Mauth {
+impl<'a> CephPrimitive<'a> for Mauth<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		protocol: le_u32 ~
@@ -1492,31 +1494,31 @@ impl<'a> CephPrimitive<'a> for Mauth {
 }
 #[test]
 fn test_ceph_read_MLogAck() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     // let expected_result = Mlogack {
     // };
-    let result = Mlogack::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mlogack::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    ////assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mlogack() {
-    let expected_bytes = vec![];
-    let result = Mlogack::write_to_wire();
-    println!("ceph_write_Mlogack{:?}", result);
+    //let bytes = vec![];
+    //let result = Mlogack::write_to_wire();
+    //println!("ceph_write_Mlogack{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mlogack {
+pub struct Mlogack<'a> {
     pub fsid: Uuid,
     pub last: u64,
     pub channel: &'a str,
 }
 
-impl<'a> CephPrimitive<'a> for Mlogack {
+impl<'a> CephPrimitive<'a> for Mlogack<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		fsid: parse_fsid ~
@@ -1538,19 +1540,19 @@ impl<'a> CephPrimitive<'a> for Mlogack {
 
 #[test]
 fn test_ceph_read_ceph_mon_subscribe_item_old() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
-    let result = CephMonSubscribeItemOld::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = CephMonSubscribeItemOld::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    //assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_CephMonSubscribeItemOld() {
-    let expected_bytes = vec![];
-    let result = CephMonSubscribeItemOld::write_to_wire();
-    println!("ceph_write_CephMonSubscribeItemOld{:?}", result);
+    //let bytes = vec![];
+    //let result = CephMonSubscribeItemOld::write_to_wire();
+    //println!("ceph_write_CephMonSubscribeItemOld{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
@@ -1582,31 +1584,31 @@ impl<'a> CephPrimitive<'a> for CephMonSubscribeItemOld {
 }
 #[test]
 fn test_ceph_read_MRoute() {
-    let bytes = vec![];
+    //let bytes = vec![];
     let x: &[u8] = &[];
     // let expected_result = Mroute {
     // };
-    let result = Mroute::read_from_wire(&bytes);
-    println!("ceph_connect_reply: {:?}", result);
-    assert_eq!(Done(x, expected_result), result);
+    //let result = Mroute::read_from_wire(&bytes);
+    //println!("ceph_connect_reply: {:?}", result);
+    ////assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
 fn test_ceph_write_Mroute() {
-    let expected_bytes = vec![];
-    let result = Mroute::write_to_wire();
-    println!("ceph_write_Mroute{:?}", result);
+    //let bytes = vec![];
+    //let result = Mroute::write_to_wire();
+    //println!("ceph_write_Mroute{:?}", result);
     // assert_eq!(result, expected_bytes);
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mroute {
+pub struct Mroute<'a> {
     pub session_mon_tid: u64,
     pub msg: &'a str,
     pub dest: EntityInstT,
 }
 
-impl<'a> CephPrimitive<'a> for Mroute {
+impl<'a> CephPrimitive<'a> for Mroute<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         let head_version = 1;
         let compat_version = 1;

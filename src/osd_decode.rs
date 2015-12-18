@@ -52,6 +52,7 @@ pub struct OsdReqidT {
 impl<'a> CephPrimitive<'a> for OsdReqidT {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
+        take!(12)~ //TODO Why do I need this?
 		name: call!(EntityNameT::read_from_wire) ~
 		tid: le_u64 ~
 		inc: le_i32,
@@ -794,6 +795,9 @@ fn test_ceph_write_ObjectStatSumT() {
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct ObjectStatSumT {
+    pub version: u8,
+    pub compat: u8,
+    pub struct_len: u32,
     pub num_bytes: i64,
     pub num_objects: i64,
     pub num_object_clones: i64,
@@ -832,6 +836,9 @@ pub struct ObjectStatSumT {
 impl<'a> CephPrimitive<'a> for ObjectStatSumT {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
+        version: le_u8~
+        compat: le_u8~
+        struct_len: le_u32~
 		num_bytes: le_i64 ~
 		num_objects: le_i64 ~
 		num_object_clones: le_i64 ~
@@ -867,41 +874,44 @@ impl<'a> CephPrimitive<'a> for ObjectStatSumT {
 		num_objects_pinned: le_i64,
 		||{
 			ObjectStatSumT{
-			num_bytes: num_bytes,
-			num_objects: num_objects,
-			num_object_clones: num_object_clones,
-			num_object_copies: num_object_copies,
-			num_objects_missing_on_primary: num_objects_missing_on_primary,
-			num_objects_degraded: num_objects_degraded,
-			num_objects_misplaced: num_objects_misplaced,
-			num_objects_unfound: num_objects_unfound,
-			num_rd: num_rd,
-			num_rd_kb: num_rd_kb,
-			num_wr: num_wr,
-			num_wr_kb: num_wr_kb,
-			num_scrub_errors: num_scrub_errors,
-			num_shallow_scrub_errors: num_shallow_scrub_errors,
-			num_deep_scrub_errors: num_deep_scrub_errors,
-			num_objects_recovered: num_objects_recovered,
-			num_bytes_recovered: num_bytes_recovered,
-			num_keys_recovered: num_keys_recovered,
-			num_objects_dirty: num_objects_dirty,
-			num_whiteouts: num_whiteouts,
-			num_objects_omap: num_objects_omap,
-			num_objects_hit_set_archive: num_objects_hit_set_archive,
-			num_bytes_hit_set_archive: num_bytes_hit_set_archive,
-			num_flush: num_flush,
-			num_flush_kb: num_flush_kb,
-			num_evict: num_evict,
-			num_evict_kb: num_evict_kb,
-			num_promote: num_promote,
-			num_flush_mode_high: num_flush_mode_high,
-			num_flush_mode_low: num_flush_mode_low,
-			num_evict_mode_some: num_evict_mode_some,
-			num_evict_mode_full: num_evict_mode_full,
-			num_objects_pinned: num_objects_pinned,
-		}
-	})
+                version: version,
+                compat:compat,
+                struct_len: struct_len,
+    			num_bytes: num_bytes,
+    			num_objects: num_objects,
+    			num_object_clones: num_object_clones,
+    			num_object_copies: num_object_copies,
+    			num_objects_missing_on_primary: num_objects_missing_on_primary,
+    			num_objects_degraded: num_objects_degraded,
+    			num_objects_misplaced: num_objects_misplaced,
+    			num_objects_unfound: num_objects_unfound,
+    			num_rd: num_rd,
+    			num_rd_kb: num_rd_kb,
+    			num_wr: num_wr,
+    			num_wr_kb: num_wr_kb,
+    			num_scrub_errors: num_scrub_errors,
+    			num_shallow_scrub_errors: num_shallow_scrub_errors,
+    			num_deep_scrub_errors: num_deep_scrub_errors,
+    			num_objects_recovered: num_objects_recovered,
+    			num_bytes_recovered: num_bytes_recovered,
+    			num_keys_recovered: num_keys_recovered,
+    			num_objects_dirty: num_objects_dirty,
+    			num_whiteouts: num_whiteouts,
+    			num_objects_omap: num_objects_omap,
+    			num_objects_hit_set_archive: num_objects_hit_set_archive,
+    			num_bytes_hit_set_archive: num_bytes_hit_set_archive,
+    			num_flush: num_flush,
+    			num_flush_kb: num_flush_kb,
+    			num_evict: num_evict,
+    			num_evict_kb: num_evict_kb,
+    			num_promote: num_promote,
+    			num_flush_mode_high: num_flush_mode_high,
+    			num_flush_mode_low: num_flush_mode_low,
+    			num_evict_mode_some: num_evict_mode_some,
+    			num_evict_mode_full: num_evict_mode_full,
+    			num_objects_pinned: num_objects_pinned,
+    		}
+    	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
         let mut buffer: Vec<u8> = Vec::new();
@@ -1350,9 +1360,11 @@ fn test_ceph_write_PgStatT() {
     // assert_eq!(result, expected_bytes);
 }
 
-// TODO: might need to decode this by hand
 #[derive(Debug,Eq,PartialEq)]
 pub struct PgStatT {
+    pub struct_version: u8,
+    pub compat: u8,
+    pub struct_len: u32,
     pub version: EversionT,
     pub reported_seq: u64,
     pub reported_epoch: u32,
@@ -1380,6 +1392,7 @@ pub struct PgStatT {
     pub stats_invalid: u8,
     pub log_size: i64,
     pub ondisk_log_size: i64,
+    /*
     pub up: Vec<i32>,
     pub acting: Vec<i32>,
     pub mapping_epoch: u32,
@@ -1393,11 +1406,15 @@ pub struct PgStatT {
     pub pin_stats_invalid: u8,
     pub up_primary: i32,
     pub acting_primary: i32,
+    */
 }
 
 impl<'a> CephPrimitive<'a> for PgStatT {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
+        struct_version: le_u8~
+        compat: le_u8~
+		struct_len: le_u32 ~
 		version: call!(EversionT::read_from_wire) ~
 		reported_seq: le_u64 ~
 		reported_epoch: le_u32 ~
@@ -1424,7 +1441,8 @@ impl<'a> CephPrimitive<'a> for PgStatT {
 		stats: call!(ObjectStatCollectionT::read_from_wire) ~
 		stats_invalid: le_u8 ~
 		log_size: le_i64 ~
-		ondisk_log_size: le_i64 ~
+		ondisk_log_size: le_i64 ,
+        /*
 		up_count: le_u32 ~
 		up: count!(le_i32, up_count as usize)~
 		acting_count: le_u32 ~
@@ -1441,8 +1459,12 @@ impl<'a> CephPrimitive<'a> for PgStatT {
 		pin_stats_invalid: le_u8 ~
 		up_primary: le_i32 ~
 		acting_primary: le_i32 ,
+        */
 		||{
 			PgStatT{
+            struct_version: struct_version,
+            compat: compat,
+            struct_len: struct_len,
 			version: version,
 			reported_seq: reported_seq,
 			reported_epoch: reported_epoch,
@@ -1470,6 +1492,7 @@ impl<'a> CephPrimitive<'a> for PgStatT {
 			stats_invalid: stats_invalid,
 			log_size: log_size,
 			ondisk_log_size: ondisk_log_size,
+            /*
 			up: up,
 			acting: acting,
 			mapping_epoch: mapping_epoch,
@@ -1483,6 +1506,7 @@ impl<'a> CephPrimitive<'a> for PgStatT {
 			pin_stats_invalid: pin_stats_invalid,
 			up_primary: up_primary,
 			acting_primary: acting_primary,
+            */
 		}
 	})
     }
@@ -2282,6 +2306,9 @@ fn test_ceph_write_SpgT() {
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct SpgT {
+    pub version: u8,
+    pub compat: u8,
+    pub struct_len: u32,
     pub pgid: pg_t,
     pub shard: i8,
 }
@@ -2289,10 +2316,16 @@ pub struct SpgT {
 impl<'a> CephPrimitive<'a> for SpgT {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
+        version: le_u8~
+        compat: le_u8~
+        struct_len: le_u32~
 		pgid: call!(pg_t::read_from_wire) ~
 		shard: le_i8,
 		||{
 			SpgT{
+            version: version,
+            compat: compat,
+            struct_len: struct_len,
 			pgid: pgid,
 			shard: shard,
 		}
@@ -2486,6 +2519,7 @@ fn test_ceph_write_Mosdpgcreate() {
 }
 #[derive(Debug,Eq,PartialEq)]
 pub struct pg_t {
+    pub version: u8,
     pub m_pool: u64,
     pub m_seed: u32,
     pub m_preferred: i32,
@@ -2493,11 +2527,13 @@ pub struct pg_t {
 impl<'a> CephPrimitive<'a> for pg_t {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
+        version: le_u8~
 		m_pool: le_u64 ~
 		m_seed: le_u32 ~
 		m_preferred:le_i32,
 		||{
 			pg_t{
+                version: version,
                 m_pool: m_pool,
                 m_seed: m_seed,
                 m_preferred: m_preferred,
@@ -2627,6 +2663,7 @@ impl<'a> CephPrimitive<'a> for MOsdRepOp<'a> {
 		pg_trim_rollback_to: call!(EversionT::read_from_wire) ~
 		new_temp_oid: call!(HObject::read_from_wire) ~
 		discard_temp_oid: call!(HObject::read_from_wire) ~
+        hit_set_history_is_present: le_u8~// If this is not zero than grab hit_set_history
 		updated_hit_set_history: hard_opt!(pg_hit_set_history_t::read_from_wire),
 		||{
 			MOsdRepOp{
@@ -4847,7 +4884,7 @@ fn test_ceph_write_Mosdecsubopread() {
 // }
 //
 #[test]
-fn test_ceph_read_MGetPoolStatsReply() {
+fn test_ceph_read_mgetpoolstatsreply() {
     //let bytes = vec![];
     let x: &[u8] = &[];
     let expected_result = "";
@@ -4857,7 +4894,7 @@ fn test_ceph_read_MGetPoolStatsReply() {
 }
 
 #[test]
-fn test_ceph_write_Mgetpoolstatsreply() {
+fn test_ceph_write_mgetpoolstatsreply() {
     //let bytes = vec![];
     //let result = Mgetpoolstatsreply::write_to_wire();
     //println!("ceph_write_Mgetpoolstatsreply{:?}", result);
@@ -4938,7 +4975,7 @@ impl<'a> CephPrimitive<'a> for Mgetpoolstatsreply<'a> {
 // }
 //
 #[test]
-fn test_ceph_read_MRecoveryReserve() {
+fn test_ceph_read_mrecoveryreserve() {
     //let bytes = vec![];
     let x: &[u8] = &[];
     // let expected_result = Mrecoveryreserve {
@@ -4949,7 +4986,7 @@ fn test_ceph_read_MRecoveryReserve() {
 }
 
 #[test]
-fn test_ceph_write_Mrecoveryreserve() {
+fn test_ceph_write_mrecoveryreserve() {
     //let bytes = vec![];
     //let result = Mrecoveryreserve::write_to_wire();
     //println!("ceph_write_Mrecoveryreserve{:?}", result);

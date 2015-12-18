@@ -38,7 +38,7 @@ impl<'a> CephPrimitive<'a> for EntityNameT {
         let TYPE_MDS = 1;
         let TYPE_OSD = 1;
         let TYPE_CLIENT = 1;
-        let NEW = 1;
+        let NEW = -1;
         chain!(input,
 		_type: le_u8 ~
 		_num: le_i64,

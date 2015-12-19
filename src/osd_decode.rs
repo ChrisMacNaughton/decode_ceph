@@ -89,15 +89,15 @@ fn test_ceph_write_PoolStatT() {
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct PoolStatT {
-    pub stats: ObjectStatCollectionT,
+pub struct PoolStatT<'a> {
+    pub stats: ObjectStatCollectionT<'a>,
     pub log_size: i64,
     pub ondisk_log_size: i64,
     pub up: i32,
     pub acting: i32,
 }
 
-impl<'a> CephPrimitive<'a> for PoolStatT {
+impl<'a> CephPrimitive<'a> for PoolStatT<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		stats: call!(ObjectStatCollectionT::read_from_wire) ~
@@ -804,22 +804,24 @@ pub struct ObjectStatSumT {
     pub num_object_copies: i64,
     pub num_objects_missing_on_primary: i64,
     pub num_objects_degraded: i64,
-    pub num_objects_misplaced: i64,
+    //pub num_objects_misplaced: i64,
     pub num_objects_unfound: i64,
     pub num_rd: i64,
     pub num_rd_kb: i64,
     pub num_wr: i64,
     pub num_wr_kb: i64,
     pub num_scrub_errors: i64,
-    pub num_shallow_scrub_errors: i64,
-    pub num_deep_scrub_errors: i64,
     pub num_objects_recovered: i64,
     pub num_bytes_recovered: i64,
     pub num_keys_recovered: i64,
+    pub num_shallow_scrub_errors: i64,
+    pub num_deep_scrub_errors: i64,
     pub num_objects_dirty: i64,
     pub num_whiteouts: i64,
     pub num_objects_omap: i64,
     pub num_objects_hit_set_archive: i64,
+    /*
+    //TODO: Infernalis fields?
     pub num_bytes_hit_set_archive: i64,
     pub num_flush: i64,
     pub num_flush_kb: i64,
@@ -831,6 +833,7 @@ pub struct ObjectStatSumT {
     pub num_evict_mode_some: i32,
     pub num_evict_mode_full: i32,
     pub num_objects_pinned: i64,
+    */
 }
 
 impl<'a> CephPrimitive<'a> for ObjectStatSumT {
@@ -845,22 +848,23 @@ impl<'a> CephPrimitive<'a> for ObjectStatSumT {
 		num_object_copies: le_i64 ~
 		num_objects_missing_on_primary: le_i64 ~
 		num_objects_degraded: le_i64 ~
-		num_objects_misplaced: le_i64 ~
+		//num_objects_misplaced: le_i64 ~
 		num_objects_unfound: le_i64 ~
 		num_rd: le_i64 ~
 		num_rd_kb: le_i64 ~
 		num_wr: le_i64 ~
 		num_wr_kb: le_i64 ~
 		num_scrub_errors: le_i64 ~
-		num_shallow_scrub_errors: le_i64 ~
-		num_deep_scrub_errors: le_i64 ~
 		num_objects_recovered: le_i64 ~
 		num_bytes_recovered: le_i64 ~
 		num_keys_recovered: le_i64 ~
+		num_shallow_scrub_errors: le_i64 ~
+		num_deep_scrub_errors: le_i64 ~
 		num_objects_dirty: le_i64 ~
 		num_whiteouts: le_i64 ~
 		num_objects_omap: le_i64 ~
-		num_objects_hit_set_archive: le_i64 ~
+		num_objects_hit_set_archive: le_i64,
+        /*
 		num_bytes_hit_set_archive: le_i64 ~
 		num_flush: le_i64 ~
 		num_flush_kb: le_i64 ~
@@ -872,6 +876,7 @@ impl<'a> CephPrimitive<'a> for ObjectStatSumT {
 		num_evict_mode_some: le_i32 ~
 		num_evict_mode_full: le_i32 ~
 		num_objects_pinned: le_i64,
+        */
 		||{
 			ObjectStatSumT{
                 version: version,
@@ -883,7 +888,7 @@ impl<'a> CephPrimitive<'a> for ObjectStatSumT {
     			num_object_copies: num_object_copies,
     			num_objects_missing_on_primary: num_objects_missing_on_primary,
     			num_objects_degraded: num_objects_degraded,
-    			num_objects_misplaced: num_objects_misplaced,
+    			//num_objects_misplaced: num_objects_misplaced,
     			num_objects_unfound: num_objects_unfound,
     			num_rd: num_rd,
     			num_rd_kb: num_rd_kb,
@@ -899,6 +904,7 @@ impl<'a> CephPrimitive<'a> for ObjectStatSumT {
     			num_whiteouts: num_whiteouts,
     			num_objects_omap: num_objects_omap,
     			num_objects_hit_set_archive: num_objects_hit_set_archive,
+                /*
     			num_bytes_hit_set_archive: num_bytes_hit_set_archive,
     			num_flush: num_flush,
     			num_flush_kb: num_flush_kb,
@@ -910,6 +916,7 @@ impl<'a> CephPrimitive<'a> for ObjectStatSumT {
     			num_evict_mode_some: num_evict_mode_some,
     			num_evict_mode_full: num_evict_mode_full,
     			num_objects_pinned: num_objects_pinned,
+                */
     		}
     	})
     }
@@ -1099,7 +1106,7 @@ pub struct PgInfoT<'a> {
     pub last_backfill: HObject<'a>,
     pub last_backfill_bitwise: u8,
     pub purged_snaps: Vec<u64>,
-    pub stats: PgStatT,
+    pub stats: PgStatT<'a>,
     pub history: PgHistory,
     pub hit_set: pg_hit_set_history_t,
 }
@@ -1361,7 +1368,7 @@ fn test_ceph_write_PgStatT() {
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct PgStatT {
+pub struct PgStatT<'a> {
     pub struct_version: u8,
     pub compat: u8,
     pub struct_len: u32,
@@ -1369,14 +1376,6 @@ pub struct PgStatT {
     pub reported_seq: u64,
     pub reported_epoch: u32,
     pub state: u32,
-    pub last_fresh: Utime,
-    pub last_change: Utime,
-    pub last_active: Utime,
-    pub last_peered: Utime,
-    pub last_clean: Utime,
-    pub last_unstale: Utime,
-    pub last_undegraded: Utime,
-    pub last_fullsized: Utime,
     pub log_start: EversionT,
     pub ondisk_log_start: EversionT,
     pub created: u32,
@@ -1384,32 +1383,32 @@ pub struct PgStatT {
     pub parent: pg_t,
     pub parent_split_bits: u32,
     pub last_scrub: EversionT,
-    pub last_deep_scrub: EversionT,
     pub last_scrub_stamp: Utime,
-    pub last_deep_scrub_stamp: Utime,
-    pub last_clean_scrub_stamp: Utime,
-    pub stats: ObjectStatCollectionT,
-    pub stats_invalid: u8,
+    pub stats: ObjectStatCollectionT<'a>,
     pub log_size: i64,
     pub ondisk_log_size: i64,
-    /*
     pub up: Vec<i32>,
     pub acting: Vec<i32>,
+    pub last_fresh: Utime,
+    pub last_change: Utime,
+    pub last_active: Utime,
+    //pub last_peered: Utime,
+    pub last_clean: Utime,
+    pub last_unstale: Utime,
     pub mapping_epoch: u32,
-    pub blocked_by: Vec<i32>,
+    pub last_deep_scrub: EversionT,
+    pub last_deep_scrub_stamp: Utime,
+    pub stats_invalid: u8,
+    pub last_clean_scrub_stamp: Utime,
     pub last_became_active: Utime,
-    pub last_became_peered: Utime,
     pub dirty_stats_invalid: u8,
-    pub omap_stats_invalid: u8,
-    pub hitset_stats_invalid: u8,
-    pub hitset_bytes_stats_invalid: u8,
-    pub pin_stats_invalid: u8,
     pub up_primary: i32,
     pub acting_primary: i32,
-    */
+    pub omap_stats_invalid: u8,
+    pub hitset_stats_invalid: u8,
 }
 
-impl<'a> CephPrimitive<'a> for PgStatT {
+impl<'a> CephPrimitive<'a> for PgStatT<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
         struct_version: le_u8~
@@ -1419,14 +1418,6 @@ impl<'a> CephPrimitive<'a> for PgStatT {
 		reported_seq: le_u64 ~
 		reported_epoch: le_u32 ~
 		state: le_u32 ~
-		last_fresh: call!(Utime::read_from_wire) ~
-		last_change: call!(Utime::read_from_wire) ~
-		last_active: call!(Utime::read_from_wire) ~
-		last_peered: call!(Utime::read_from_wire) ~
-		last_clean: call!(Utime::read_from_wire) ~
-		last_unstale: call!(Utime::read_from_wire) ~
-		last_undegraded: call!(Utime::read_from_wire) ~
-		last_fullsized: call!(Utime::read_from_wire) ~
 		log_start: call!(EversionT::read_from_wire) ~
 		ondisk_log_start: call!(EversionT::read_from_wire) ~
 		created: le_u32 ~
@@ -1434,79 +1425,71 @@ impl<'a> CephPrimitive<'a> for PgStatT {
 		parent: call!(pg_t::read_from_wire) ~
 		parent_split_bits: le_u32 ~
 		last_scrub: call!(EversionT::read_from_wire) ~
-		last_deep_scrub: call!(EversionT::read_from_wire) ~
 		last_scrub_stamp: call!(Utime::read_from_wire) ~
-		last_deep_scrub_stamp: call!(Utime::read_from_wire) ~
-		last_clean_scrub_stamp: call!(Utime::read_from_wire) ~
 		stats: call!(ObjectStatCollectionT::read_from_wire) ~
-		stats_invalid: le_u8 ~
 		log_size: le_i64 ~
-		ondisk_log_size: le_i64 ,
-        /*
+		ondisk_log_size: le_i64~
 		up_count: le_u32 ~
 		up: count!(le_i32, up_count as usize)~
 		acting_count: le_u32 ~
 		acting: count!(le_i32, acting_count as usize)~
+		last_fresh: call!(Utime::read_from_wire) ~
+		last_change: call!(Utime::read_from_wire) ~
+		last_active: call!(Utime::read_from_wire) ~
+		//last_peered: call!(Utime::read_from_wire) ~
+		last_clean: call!(Utime::read_from_wire) ~
+		last_unstale: call!(Utime::read_from_wire) ~
 		mapping_epoch: le_u32 ~
-		blocked_count: le_u32 ~
-		blocked_by: count!(le_i32, blocked_count as usize)~
+		last_deep_scrub: call!(EversionT::read_from_wire) ~
+		last_deep_scrub_stamp: call!(Utime::read_from_wire) ~
+		stats_invalid: le_u8 ~
+		last_clean_scrub_stamp: call!(Utime::read_from_wire) ~
 		last_became_active: call!(Utime::read_from_wire) ~
-		last_became_peered: call!(Utime::read_from_wire) ~
 		dirty_stats_invalid: le_u8 ~
-		omap_stats_invalid: le_u8 ~
-		hitset_stats_invalid: le_u8 ~
-		hitset_bytes_stats_invalid: le_u8 ~
-		pin_stats_invalid: le_u8 ~
 		up_primary: le_i32 ~
-		acting_primary: le_i32 ,
-        */
+		acting_primary: le_i32~
+		omap_stats_invalid: le_u8 ~
+		hitset_stats_invalid: le_u8,
 		||{
+            println!("up count: {}", up_count);
 			PgStatT{
-            struct_version: struct_version,
-            compat: compat,
-            struct_len: struct_len,
-			version: version,
-			reported_seq: reported_seq,
-			reported_epoch: reported_epoch,
-			state: state,
-			last_fresh: last_fresh,
-			last_change: last_change,
-			last_active: last_active,
-			last_peered: last_peered,
-			last_clean: last_clean,
-			last_unstale: last_unstale,
-			last_undegraded: last_undegraded,
-			last_fullsized: last_fullsized,
-			log_start: log_start,
-			ondisk_log_start: ondisk_log_start,
-			created: created,
-			last_epoch_clean: last_epoch_clean,
-			parent: parent,
-			parent_split_bits: parent_split_bits,
-			last_scrub: last_scrub,
-			last_deep_scrub: last_deep_scrub,
-			last_scrub_stamp: last_scrub_stamp,
-			last_deep_scrub_stamp: last_deep_scrub_stamp,
-			last_clean_scrub_stamp: last_clean_scrub_stamp,
-			stats: stats,
-			stats_invalid: stats_invalid,
-			log_size: log_size,
-			ondisk_log_size: ondisk_log_size,
-            /*
-			up: up,
-			acting: acting,
-			mapping_epoch: mapping_epoch,
-			blocked_by: blocked_by,
-			last_became_active: last_became_active,
-			last_became_peered: last_became_peered,
-			dirty_stats_invalid: dirty_stats_invalid,
-			omap_stats_invalid: omap_stats_invalid,
-			hitset_stats_invalid: hitset_stats_invalid,
-			hitset_bytes_stats_invalid: hitset_bytes_stats_invalid,
-			pin_stats_invalid: pin_stats_invalid,
-			up_primary: up_primary,
-			acting_primary: acting_primary,
-            */
+                struct_version:struct_version,
+                compat:compat,
+                struct_len:struct_len,
+                version:version,
+                reported_seq:reported_seq,
+                reported_epoch:reported_epoch,
+                state:state,
+                log_start:log_start,
+                ondisk_log_start:ondisk_log_start,
+                created:created,
+                last_epoch_clean:last_epoch_clean,
+                parent:parent,
+                parent_split_bits:parent_split_bits,
+                last_scrub:last_scrub,
+                last_scrub_stamp:last_scrub_stamp,
+                stats:stats,
+                log_size:log_size,
+                ondisk_log_size:ondisk_log_size,
+                up:up,
+                acting:acting,
+                last_fresh:last_fresh,
+                last_change:last_change,
+                last_active:last_active,
+                //last_peered:last_peered,
+                last_clean:last_clean,
+                last_unstale:last_unstale,
+                mapping_epoch:mapping_epoch,
+                last_deep_scrub:last_deep_scrub,
+                last_deep_scrub_stamp:last_deep_scrub_stamp,
+                stats_invalid:stats_invalid,
+                last_clean_scrub_stamp:last_clean_scrub_stamp,
+                last_became_active:last_became_active,
+                dirty_stats_invalid:dirty_stats_invalid,
+                up_primary:up_primary,
+                acting_primary:acting_primary,
+                omap_stats_invalid:omap_stats_invalid,
+                hitset_stats_invalid:hitset_stats_invalid,
 		}
 	})
     }
@@ -2157,19 +2140,33 @@ fn test_ceph_write_ObjectStatCollectionT() {
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct ObjectStatCollectionT {
+pub struct ObjectStatCollectionT<'a> {
+    pub version: u8,
+    pub compat: u8,
+    pub struct_len: u32,
     pub sum: ObjectStatSumT,
+    pub cat_sum: Vec<(&'a str,ObjectStatSumT)>,
 }
 
-impl<'a> CephPrimitive<'a> for ObjectStatCollectionT {
+impl<'a> CephPrimitive<'a> for ObjectStatCollectionT<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
-		sum: call!(ObjectStatSumT::read_from_wire),
-		||{
-			ObjectStatCollectionT{
-			sum: sum,
-		}
-	})
+            version: le_u8 ~
+            compat: le_u8 ~
+            struct_len: le_u32 ~
+    		sum: call!(ObjectStatSumT::read_from_wire)~
+            cat_sum_len: le_u32~
+            cat_sum: count!(
+                pair!(parse_str, call!(ObjectStatSumT::read_from_wire)), cat_sum_len as usize),
+    		||{
+    			ObjectStatCollectionT{
+                version: version,
+                compat: compat,
+                struct_len: struct_len,
+    			sum: sum,
+                cat_sum: cat_sum,
+    		}
+    	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
         let mut buffer: Vec<u8> = Vec::new();
@@ -2383,7 +2380,7 @@ pub struct SnapSet {
     pub head_exists: u8,
     pub snaps: Vec<u64>, // descending
     pub clones: Vec<u64>, // ascending
-    pub clone_overlap: Vec<(u64, u64)>, // overlap w/ next newest
+    pub clone_overlap: Vec<(u64, Vec<u64>)>, // overlap w/ next newest
     pub clone_size: Vec<(u64, u64)>,
 }
 
@@ -2397,7 +2394,8 @@ impl<'a> CephPrimitive<'a> for SnapSet {
           clone_len: le_u32~
           clones: count!(le_u64, clone_len as usize)~
           clone_overlap_len: le_u32~
-          clone_overlap: count!(pair!(le_u64, le_u64), clone_overlap_len as usize)~
+          clone_overlap: count!(
+              pair!(le_u64, /*inner Vec */length_value!(le_u32, le_u64)), clone_overlap_len as usize)~
           clone_size_len: le_u32~
           clone_size: count!(pair!(le_u64, le_u64), clone_size_len as usize),
 		||{
@@ -2637,7 +2635,7 @@ pub struct MOsdRepOp<'a> {
     pub poid: HObject<'a>,
     pub acks_wanted: u8,
     pub logbl: &'a [u8],
-    pub pg_stats: PgStatT,
+    pub pg_stats: PgStatT<'a>,
     pub version: EversionT,
     pub pg_trim_to: EversionT,
     pub pg_trim_rollback_to: EversionT,
@@ -2859,15 +2857,15 @@ impl<'a> CephPrimitive<'a> for osd_stat_t {
     }
 }
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mpgstats {
+pub struct Mpgstats<'a> {
     pub fsid: Uuid,
-    pub pg_stat: Vec<(pg_t, PgStatT)>,
+    pub pg_stat: Vec<(pg_t, PgStatT<'a>)>,
     pub osd_stat: osd_stat_t,
     pub epoch: u32,
     pub had_map_for: Utime,
 }
 
-impl<'a> CephPrimitive<'a> for Mpgstats {
+impl<'a> CephPrimitive<'a> for Mpgstats<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		fsid: parse_fsid ~
@@ -2962,7 +2960,7 @@ pub struct Mosdpgbackfill<'a> {
     pub pgid: SpgT,
     pub last_backfill: HObject<'a>,
     pub compat_stat_sum: u8,
-    pub stats: PgStatT,
+    pub stats: PgStatT<'a>,
 }
 
 impl<'a> CephPrimitive<'a> for Mosdpgbackfill<'a> {
@@ -3582,7 +3580,7 @@ pub struct Mosdsubop<'a> {
     pub snapset: SnapSet,
     pub snapc: SnapContext,
     pub logbl: &'a [u8],
-    pub pg_stats: PgStatT,
+    pub pg_stats: PgStatT<'a>,
     pub version: EversionT,
     pub pg_trim_to: EversionT,
     pub pg_trim_rollback_to: EversionT,
@@ -4425,11 +4423,11 @@ fn test_ceph_write_Mpgstatsack() {
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct Mpgstatsack {
-    pub pg_stat: Vec<(PgStatT, (u64, u32))>,
+pub struct Mpgstatsack<'a> {
+    pub pg_stat: Vec<(PgStatT<'a>, (u64, u32))>,
 }
 
-impl<'a> CephPrimitive<'a> for Mpgstatsack {
+impl<'a> CephPrimitive<'a> for Mpgstatsack<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		count: le_u32 ~
@@ -4904,7 +4902,7 @@ fn test_ceph_write_mgetpoolstatsreply() {
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mgetpoolstatsreply<'a> {
     pub fsid: Uuid,
-    pub pool_stats: Vec<(&'a str, PoolStatT)>,
+    pub pool_stats: Vec<(&'a str, PoolStatT<'a>)>,
 }
 
 impl<'a> CephPrimitive<'a> for Mgetpoolstatsreply<'a> {

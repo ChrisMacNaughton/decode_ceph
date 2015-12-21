@@ -34,20 +34,15 @@ pub struct EntityNameT {
 
 impl<'a> CephPrimitive<'a> for EntityNameT {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
-        let TYPE_MON = 1;
-        let TYPE_MDS = 1;
-        let TYPE_OSD = 1;
-        let TYPE_CLIENT = 1;
-        let NEW = -1;
         chain!(input,
-		_type: le_u8 ~
-		_num: le_i64,
-		||{
-			EntityNameT{
-			_type: _type,
-			_num: _num,
-		}
-	})
+    		_type: le_u8 ~
+    		_num: le_i64,
+    		||{
+    			EntityNameT{
+    			_type: _type,
+    			_num: _num,
+    		}
+    	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
         let mut buffer: Vec<u8> = Vec::new();

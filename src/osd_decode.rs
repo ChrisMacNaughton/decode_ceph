@@ -25,17 +25,29 @@ macro_rules! hard_opt(
 );
 
 #[test]
-fn test_ceph_read_OsdReqidT() {
-    //let bytes = vec![];
+fn test_ceph_read_osdreqidt() {
+    let bytes = vec![
+        /*EntityNameT*/
+        2, //name
+        21, 0, 0, 0, 8, 83, 16, 0, //number
+        0, 0, 0, 0, 0, 1, 0, 0, //tid
+        0, 0, 0, 0, //inc
+    ];
     let x: &[u8] = &[];
-    let expected_result = "";
-    //let result = OsdReqidT::read_from_wire(&bytes);
-    //println!("ceph_connect_reply: {:?}", result);
-    //assert_eq!(Done(x, expected_result), result);
+    let expected_result = OsdReqidT {
+        name: EntityNameT {
+            _type: 2,
+            _num: 4594893452214293 },
+        tid: 1099511627776,
+        inc: 0
+    };
+    let result = OsdReqidT::read_from_wire(&bytes);
+    println!("OsdReqidT: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
 }
 
 #[test]
-fn test_ceph_write_OsdReqidT() {
+fn test_ceph_write_osdreqidt() {
     //let bytes = vec![];
     //let result = OsdReqidT::write_to_wire();
     //println!("ceph_write_OsdReqidT{:?}", result);
@@ -52,7 +64,6 @@ pub struct OsdReqidT {
 impl<'a> CephPrimitive<'a> for OsdReqidT {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
-        take!(12)~ //TODO Why do I need this?
 		name: call!(EntityNameT::read_from_wire) ~
 		tid: le_u64 ~
 		inc: le_i32,
@@ -2469,6 +2480,18 @@ fn test_ceph_write_Mosdpgcreate() {
     //let result = Mosdpgcreate::write_to_wire();
     //println!("ceph_write_Mosdpgcreate{:?}", result);
     // assert_eq!(result, expected_bytes);
+}
+
+#[test]
+fn test_pg_t() {
+    let bytes = vec![
+        1, 0, 0, 0, 0, 0, 0, 0, 0, 17, 0, 0, 0, 255, 255, 255, 255
+    ];
+    let expected_result = pg_t { version: 1, m_pool: 0, m_seed: 17, m_preferred: -1 };
+    let x: &[u8] = &[];
+    let result = pg_t::read_from_wire(&bytes);
+    println!("pg_t: {:?}", result);
+    assert_eq!(Done(x, expected_result), result);
 }
 #[derive(Debug,Eq,PartialEq)]
 pub struct pg_t {

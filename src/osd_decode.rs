@@ -3,7 +3,7 @@ extern crate uuid;
 
 use self::nom::IResult::Done;
 use self::uuid::{ParseError, Uuid};
-use self::nom::{le_i8, le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64, be_u16};
+use self::nom::{le_i8, le_u8, le_i16, le_u16, le_i32, le_u32, le_i64, le_u64};
 use std::collections::HashMap;
 use serial::*;
 use common_decode::{EntityNameT, EntityInstT, EversionT};
@@ -65,7 +65,7 @@ impl<'a> CephPrimitive<'a> for OsdReqidT {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -116,26 +116,26 @@ impl<'a> CephPrimitive<'a> for PoolStatT<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct pool_snap_info_t<'a> {
+pub struct PoolSnapInfoT<'a> {
     pub snapid_t: u64,
     pub utime_t: Utime,
     pub name: &'a str,
 }
 
-impl<'a> CephPrimitive<'a> for pool_snap_info_t<'a> {
+impl<'a> CephPrimitive<'a> for PoolSnapInfoT<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
         snapid_t: le_u64 ~
         utime: call!(Utime::read_from_wire) ~
         name: parse_str,
         ||{
-            pool_snap_info_t{
+            PoolSnapInfoT{
                 snapid_t: snapid_t,
                 utime_t: utime,
                 name: name,
@@ -145,7 +145,7 @@ impl<'a> CephPrimitive<'a> for pool_snap_info_t<'a> {
     }
 
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -243,7 +243,7 @@ impl<'a> CephPrimitive<'a> for pool_snap_info_t<'a> {
 // count_2: le_u32 ~
 // snaps: count!(
 // pair!(le_u64,
-// call!(pool_snap_info_t::read_from_wire)), count_2) ~
+// call!(PoolSnapInfoT::read_from_wire)), count_2) ~
 // removed_snaps: le_u64 ~
 // pg_num_mask: le_u32 ~
 // pgp_num_mask: le_u32 ~
@@ -320,7 +320,7 @@ impl<'a> CephPrimitive<'a> for pool_snap_info_t<'a> {
 // })
 // }
 // fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-// let mut buffer: Vec<u8> = Vec::new();
+// let buffer: Vec<u8> = Vec::new();
 // return Ok(buffer);
 // }
 // }
@@ -362,7 +362,7 @@ impl<'a> CephPrimitive<'a> for PgShardT {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -413,7 +413,7 @@ impl<'a> CephPrimitive<'a> for Snapsetcontext<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -467,7 +467,7 @@ impl<'a> CephPrimitive<'a> for PgQueryT {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -517,7 +517,7 @@ impl<'a> CephPrimitive<'a> for PgNotifyT<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -589,7 +589,7 @@ impl<'a> CephPrimitive<'a> for PgNotifyT<'a> {
 // })
 // }
 // fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-// let mut buffer: Vec<u8> = Vec::new();
+// let buffer: Vec<u8> = Vec::new();
 // return Ok(buffer);
 // }
 // }
@@ -649,7 +649,7 @@ impl<'a> CephPrimitive<'a> for PgIntervalT {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -688,7 +688,7 @@ impl<'a> CephPrimitive<'a> for Pushreplyop<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -730,7 +730,7 @@ impl<'a> CephPrimitive<'a> for Scrubmap {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -770,7 +770,7 @@ impl<'a> CephPrimitive<'a> for ObjListWatchResponseT {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -921,7 +921,7 @@ impl<'a> CephPrimitive<'a> for ObjectStatSumT {
     	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -969,7 +969,7 @@ impl<'a> CephPrimitive<'a> for ObjectLocatorT<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -998,7 +998,7 @@ pub struct PgLogT<'a> {
     pub tail: EversionT,
     pub can_rollback_to: EversionT,
     pub rollback_info_trimmed_to: EversionT,
-    pub log: Vec<pg_log_entry_t<'a>>,
+    pub log: Vec<PgLogEntryT<'a>>,
 }
 
 impl<'a> CephPrimitive<'a> for PgLogT<'a> {
@@ -1009,7 +1009,7 @@ impl<'a> CephPrimitive<'a> for PgLogT<'a> {
 		can_rollback_to: call!(EversionT::read_from_wire) ~
 		rollback_info_trimmed_to: call!(EversionT::read_from_wire) ~
 		count: le_u32 ~
-		log: count!(call!(pg_log_entry_t::read_from_wire),count as usize),
+		log: count!(call!(PgLogEntryT::read_from_wire),count as usize),
 		||{
 			PgLogT{
 			head: head,
@@ -1021,7 +1021,7 @@ impl<'a> CephPrimitive<'a> for PgLogT<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -1049,7 +1049,7 @@ impl<'a> CephPrimitive<'a> for pg_hit_set_info_t {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -1073,7 +1073,7 @@ impl<'a> CephPrimitive<'a> for pg_hit_set_history_t {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -1145,7 +1145,7 @@ impl<'a> CephPrimitive<'a> for PgInfoT<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -1188,55 +1188,11 @@ impl<'a> CephPrimitive<'a> for PgMissingT<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
 
-#[test]
-fn test_ceph_read_pool_snap_info_t() {
-    //let bytes = vec![];
-    let x: &[u8] = &[];
-    let expected_result = "";
-    //let result = PoolSnapInfoT::read_from_wire(&bytes);
-    //println!("ceph_connect_reply: {:?}", result);
-    //assert_eq!(Done(x, expected_result), result);
-}
-
-#[test]
-fn test_ceph_write_PoolSnapInfoT() {
-    //let bytes = vec![];
-    //let result = PoolSnapInfoT::write_to_wire();
-    //println!("ceph_write_PoolSnapInfoT{:?}", result);
-    // assert_eq!(result, expected_bytes);
-}
-
-#[derive(Debug,Eq,PartialEq)]
-pub struct PoolSnapInfoT<'a> {
-    pub snapid: u64,
-    pub stamp: Utime,
-    pub name: &'a str,
-}
-
-impl<'a> CephPrimitive<'a> for PoolSnapInfoT<'a> {
-    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
-        chain!(input,
-		snapid: le_u64 ~
-		stamp: call!(Utime::read_from_wire) ~
-		name: parse_str,
-		||{
-			PoolSnapInfoT{
-			snapid: snapid,
-			stamp: stamp,
-			name: name,
-		}
-	})
-    }
-    fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
-        return Ok(buffer);
-    }
-}
 #[test]
 fn test_ceph_read_objectstore_perf_stat_t() {
     //let bytes = vec![];
@@ -1274,7 +1230,7 @@ impl<'a> CephPrimitive<'a> for ObjectstorePerfStatT {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -1344,7 +1300,7 @@ impl<'a> CephPrimitive<'a> for Pushop<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -1451,7 +1407,6 @@ impl<'a> CephPrimitive<'a> for PgStatT<'a> {
 		omap_stats_invalid: le_u8 ~
 		hitset_stats_invalid: le_u8,
 		||{
-            println!("up count: {}", up_count);
 			PgStatT{
                 struct_version:struct_version,
                 compat:compat,
@@ -1494,7 +1449,7 @@ impl<'a> CephPrimitive<'a> for PgStatT<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -1551,7 +1506,7 @@ impl<'a> CephPrimitive<'a> for PgStatT<'a> {
 // })
 // }
 // fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-// let mut buffer: Vec<u8> = Vec::new();
+// let buffer: Vec<u8> = Vec::new();
 // return Ok(buffer);
 // }
 // }
@@ -1623,7 +1578,7 @@ impl<'a> CephPrimitive<'a> for PgStatT<'a> {
 // })
 // }
 // fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-// let mut buffer: Vec<u8> = Vec::new();
+// let buffer: Vec<u8> = Vec::new();
 // return Ok(buffer);
 // }
 // }
@@ -1673,7 +1628,7 @@ impl<'a> CephPrimitive<'a> for OldPgT {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -1718,7 +1673,7 @@ impl<'a> CephPrimitive<'a> for Pullop<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -1759,7 +1714,7 @@ impl<'a> CephPrimitive<'a> for PgMissingTItem {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -1806,7 +1761,7 @@ impl<'a> CephPrimitive<'a> for WatchItemT {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -1854,7 +1809,7 @@ impl<'a> CephPrimitive<'a> for NotifyInfoT<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -1888,7 +1843,7 @@ impl<'a> CephPrimitive<'a> for NotifyInfoT<'a> {
 // pub at_version: EversionT,
 // pub trim_to: EversionT,
 // pub trim_rollback_to: EversionT,
-// pub log_entries: Vec<pg_log_entry_t>,
+// pub log_entries: Vec<PgLogEntryT>,
 // pub temp_added: Vec<HObject>,
 // pub temp_removed: Vec<HObject>,
 // pub updated_hit_set_history: pg_hit_set_history_t,
@@ -1907,7 +1862,7 @@ impl<'a> CephPrimitive<'a> for NotifyInfoT<'a> {
 // trim_to: call!(EversionT::read_from_wire) ~
 // trim_rollback_to: call!(EversionT::read_from_wire) ~
 // count: le_u32 ~
-// log_entries: count!(call!(pg_log_entry_t::read_from_wire), count as usize) ~
+// log_entries: count!(call!(PgLogEntryT::read_from_wire), count as usize) ~
 // count: le_u32 ~
 // temp_added: count!(
 // call!(HObject::read_from_wire),count as usize) ~
@@ -1933,7 +1888,7 @@ impl<'a> CephPrimitive<'a> for NotifyInfoT<'a> {
 // })
 // }
 // fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-// let mut buffer: Vec<u8> = Vec::new();
+// let buffer: Vec<u8> = Vec::new();
 // return Ok(buffer);
 // }
 // }
@@ -1979,7 +1934,7 @@ impl<'a> CephPrimitive<'a> for WatchInfoT {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2030,7 +1985,7 @@ impl<'a> CephPrimitive<'a> for Objectrecoveryprogress<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2116,7 +2071,7 @@ impl<'a> CephPrimitive<'a> for ObjectInfoT<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2169,7 +2124,7 @@ impl<'a> CephPrimitive<'a> for ObjectStatCollectionT<'a> {
     	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2209,7 +2164,7 @@ impl<'a> CephPrimitive<'a> for Objectmoddesc<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2253,7 +2208,7 @@ impl<'a> CephPrimitive<'a> for ListObjectImpl<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2278,7 +2233,7 @@ impl<'a> CephPrimitive<'a> for PgNlsResponseT<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2329,7 +2284,7 @@ impl<'a> CephPrimitive<'a> for SpgT {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2370,7 +2325,7 @@ impl<'a> CephPrimitive<'a> for SnapContext {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2410,7 +2365,7 @@ impl<'a> CephPrimitive<'a> for SnapSet {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2451,7 +2406,7 @@ impl<'a> CephPrimitive<'a> for Objectrecoveryinfo<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2494,7 +2449,7 @@ impl<'a> CephPrimitive<'a> for Mdataping<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2539,25 +2494,25 @@ impl<'a> CephPrimitive<'a> for pg_t {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct pg_create_t {
+pub struct PgCreateT {
     created: u32,
     parent: pg_t, // split from parent (if != pg_t())
     split_bits: i32,
 }
-impl<'a> CephPrimitive<'a> for pg_create_t {
+impl<'a> CephPrimitive<'a> for PgCreateT {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		created: le_u32 ~
         parent: call!(pg_t::read_from_wire) ~
         split_bits: le_i32,
 		||{
-			pg_create_t{
+			PgCreateT{
 			created: created,
             parent: parent,
             split_bits: split_bits,
@@ -2565,7 +2520,7 @@ impl<'a> CephPrimitive<'a> for pg_create_t {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2574,7 +2529,7 @@ impl<'a> CephPrimitive<'a> for pg_create_t {
 #[derive(Debug,Eq,PartialEq)]
 pub struct Mosdpgcreate {
     pub epoch: u64,
-    pub mkpg: Vec<(pg_t, pg_create_t)>,
+    pub mkpg: Vec<(pg_t, PgCreateT)>,
     pub ctimes: Vec<(pg_t, Utime)>,
 }
 
@@ -2588,7 +2543,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgcreate {
 		mkpg: count!(
             pair!(
                 call!(pg_t::read_from_wire),
-                call!(pg_create_t::read_from_wire)), count as usize) ~
+                call!(PgCreateT::read_from_wire)), count as usize) ~
 		count: le_u32 ~
 		ctimes: count!(
             pair!(
@@ -2603,7 +2558,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgcreate {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2683,7 +2638,7 @@ impl<'a> CephPrimitive<'a> for MOsdRepOp<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2730,7 +2685,7 @@ impl<'a> CephPrimitive<'a> for Mbackfillreserve {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2787,7 +2742,7 @@ impl<'a> CephPrimitive<'a> for Mwatchnotify<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2810,7 +2765,7 @@ fn test_ceph_write_Mpgstats() {
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct osd_stat_t {
+pub struct OsdStatT {
     pub kb: i64,
     pub kb_used: i64,
     pub kb_avail: i64,
@@ -2822,7 +2777,7 @@ pub struct osd_stat_t {
     pub fs_perf_stat: ObjectstorePerfStatT,
 }
 
-impl<'a> CephPrimitive<'a> for osd_stat_t {
+impl<'a> CephPrimitive<'a> for OsdStatT {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
 		kb: le_i64 ~
@@ -2838,7 +2793,7 @@ impl<'a> CephPrimitive<'a> for osd_stat_t {
         op_queue_age_hist: count!(le_i32, count as usize)~
         fs_perf_stat: call!(ObjectstorePerfStatT::read_from_wire),
 		||{
-			osd_stat_t{
+			OsdStatT{
     		kb: kb,
     		kb_used: kb_used,
     		kb_avail: kb_avail,
@@ -2852,7 +2807,7 @@ impl<'a> CephPrimitive<'a> for osd_stat_t {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2860,7 +2815,7 @@ impl<'a> CephPrimitive<'a> for osd_stat_t {
 pub struct Mpgstats<'a> {
     pub fsid: Uuid,
     pub pg_stat: Vec<(pg_t, PgStatT<'a>)>,
-    pub osd_stat: osd_stat_t,
+    pub osd_stat: OsdStatT,
     pub epoch: u32,
     pub had_map_for: Utime,
 }
@@ -2874,7 +2829,7 @@ impl<'a> CephPrimitive<'a> for Mpgstats<'a> {
             pair!(
                 call!(pg_t::read_from_wire),
                 call!(PgStatT::read_from_wire)), count as usize) ~
-		osd_stat: call!(osd_stat_t::read_from_wire) ~
+		osd_stat: call!(OsdStatT::read_from_wire) ~
 		epoch: le_u32 ~
 		had_map_for: call!(Utime::read_from_wire) ,
 		||{
@@ -2888,7 +2843,7 @@ impl<'a> CephPrimitive<'a> for Mpgstats<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2929,7 +2884,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgquery {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -2986,7 +2941,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgbackfill<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3036,7 +2991,7 @@ impl<'a> CephPrimitive<'a> for Mosdfailure {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3077,7 +3032,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgmissing<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3122,7 +3077,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgtemp {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3171,7 +3126,7 @@ impl<'a> CephPrimitive<'a> for Mpoolopreply<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3216,7 +3171,7 @@ impl<'a> CephPrimitive<'a> for Mosdpginfo<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3272,7 +3227,7 @@ impl<'a> CephPrimitive<'a> for Mpoolop<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3314,12 +3269,12 @@ impl<'a> CephPrimitive<'a> for ObjectModDesc {
         })
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
 #[derive(Debug,Eq,PartialEq)]
-pub struct pg_log_entry_t<'a>{
+pub struct PgLogEntryT<'a>{
     pub op: i32,
     pub soid: HObject<'a>,
     pub version: EversionT,
@@ -3329,14 +3284,14 @@ pub struct pg_log_entry_t<'a>{
     pub reqid: OsdReqidT,  // caller+tid to uniquely identify request
     pub mtime: Utime,  // this is the _user_ mtime, mind you
     pub snaps: Vec<u64>,   // only for clone entries
-    pub invalid_hash: u8, // only when decoding sobject_t based entries
+    pub invalid_hash: u8, // only when decoding SobjectT based entries
     pub invalid_pool: u8, // only when decoding pool-less hobject based entries
     pub offset: u64,   // [soft state] my offset on disk
     /// describes state for a locally-rollbackable entry
     pub mod_desc: ObjectModDesc,
     pub extra_reqids: Vec<(OsdReqidT, u64)>,
 }
-impl<'a> CephPrimitive<'a> for pg_log_entry_t<'a> {
+impl<'a> CephPrimitive<'a> for PgLogEntryT<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
             op: le_i32 ~
@@ -3360,7 +3315,7 @@ impl<'a> CephPrimitive<'a> for pg_log_entry_t<'a> {
                     le_u64),
                 req_id_len as usize),
     		||{
-    			pg_log_entry_t{
+    			PgLogEntryT{
                     op: op,
                     soid: soid,
                     version: version,
@@ -3379,7 +3334,7 @@ impl<'a> CephPrimitive<'a> for pg_log_entry_t<'a> {
         })
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3510,36 +3465,36 @@ impl<'a> CephPrimitive<'a> for ceph_osd_op {
         })
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
 #[derive(Debug,Eq,PartialEq)]
-pub struct sobject_t<'a> {
+pub struct SobjectT<'a> {
     pub oid: &'a str,
     pub snap: u64,
 }
-impl<'a> CephPrimitive<'a> for sobject_t<'a> {
+impl<'a> CephPrimitive<'a> for SobjectT<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
             oid: parse_str ~
             snap: le_u64,
     		||{
-			sobject_t{
+			SobjectT{
                 oid: oid,
                 snap: snap,
             }
         })
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
 #[derive(Debug,Eq,PartialEq)]
 pub struct COsdOp<'a> {
     pub op: ceph_osd_op,
-    pub soid: sobject_t<'a>,
+    pub soid: SobjectT<'a>,
     // bufferlist indata, outdata;
     pub rval: i32,
 }
@@ -3547,7 +3502,7 @@ impl<'a> CephPrimitive<'a> for COsdOp<'a> {
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self> {
         chain!(input,
             op: call!(ceph_osd_op::read_from_wire) ~
-            soid: call!(sobject_t::read_from_wire) ~
+            soid: call!(SobjectT::read_from_wire) ~
             rval: le_i32,
             ||{
                 COsdOp{
@@ -3559,7 +3514,7 @@ impl<'a> CephPrimitive<'a> for COsdOp<'a> {
             })
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3687,7 +3642,7 @@ impl<'a> CephPrimitive<'a> for Mosdsubop<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3731,7 +3686,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgtrim {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3796,7 +3751,7 @@ impl<'a> CephPrimitive<'a> for Mosdrepscrub<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3842,7 +3797,7 @@ impl<'a> CephPrimitive<'a> for Mosdrepscrub<'a> {
 // })
 // }
 // fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-// let mut buffer: Vec<u8> = Vec::new();
+// let buffer: Vec<u8> = Vec::new();
 // return Ok(buffer);
 // }
 // }
@@ -3893,7 +3848,7 @@ impl<'a> CephPrimitive<'a> for Mosdscrub {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3946,7 +3901,7 @@ impl<'a> CephPrimitive<'a> for Mosdping {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -3997,7 +3952,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgpush<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4039,7 +3994,7 @@ impl<'a> CephPrimitive<'a> for Mremovesnaps {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4077,7 +4032,7 @@ impl<'a> CephPrimitive<'a> for Mosdalive {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4128,7 +4083,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgpushreply<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4190,7 +4145,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgpushreply<'a> {
 // })
 // }
 // fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-// let mut buffer: Vec<u8> = Vec::new();
+// let buffer: Vec<u8> = Vec::new();
 // return Ok(buffer);
 // }
 // }
@@ -4248,7 +4203,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgscan<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4299,7 +4254,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgpull<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4352,7 +4307,7 @@ impl<'a> CephPrimitive<'a> for Mosdmap<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4398,7 +4353,7 @@ impl<'a> CephPrimitive<'a> for Mosdmap<'a> {
 // })
 // }
 // fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-// let mut buffer: Vec<u8> = Vec::new();
+// let buffer: Vec<u8> = Vec::new();
 // return Ok(buffer);
 // }
 // }
@@ -4442,7 +4397,7 @@ impl<'a> CephPrimitive<'a> for Mpgstatsack<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4481,7 +4436,7 @@ impl<'a> CephPrimitive<'a> for Mosdop<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4524,7 +4479,7 @@ impl<'a> CephPrimitive<'a> for Mgetpoolstats<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4599,7 +4554,7 @@ impl<'a> CephPrimitive<'a> for Mosdsubopreply<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4646,7 +4601,7 @@ impl<'a> CephPrimitive<'a> for Mosdmarkmedown {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4685,7 +4640,7 @@ impl<'a> CephPrimitive<'a> for Mosdpgremove {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4741,7 +4696,7 @@ impl<'a> CephPrimitive<'a> for MOsdRepOpreply {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4817,7 +4772,7 @@ fn test_ceph_write_Mosdecsubopread() {
 // })
 // }
 // fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-// let mut buffer: Vec<u8> = Vec::new();
+// let buffer: Vec<u8> = Vec::new();
 // return Ok(buffer);
 // }
 // }
@@ -4876,7 +4831,7 @@ fn test_ceph_write_Mosdecsubopread() {
 // })
 // }
 // fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
-// let mut buffer: Vec<u8> = Vec::new();
+// let buffer: Vec<u8> = Vec::new();
 // return Ok(buffer);
 // }
 // }
@@ -4921,7 +4876,7 @@ impl<'a> CephPrimitive<'a> for Mgetpoolstatsreply<'a> {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }
@@ -4967,7 +4922,7 @@ impl<'a> CephPrimitive<'a> for Mgetpoolstatsreply<'a> {
 // })
 // }
 // fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-// let mut buffer: Vec<u8> = Vec::new();
+// let buffer: Vec<u8> = Vec::new();
 // return Ok(buffer);
 // }
 // }
@@ -5013,7 +4968,7 @@ impl<'a> CephPrimitive<'a> for Mrecoveryreserve {
 	})
     }
     fn write_to_wire(&self) -> Result<Vec<u8>, SerialError> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer: Vec<u8> = Vec::new();
         return Ok(buffer);
     }
 }

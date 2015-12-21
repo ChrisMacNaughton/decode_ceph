@@ -1235,49 +1235,54 @@ impl<'a> CephPrimitive<'a> for CephMsgrMsg<'a>{
     }
 }
 
-enum Transactions{
-    WRITE(TransactionWriteOp)
+#[derive(Debug,Eq,PartialEq)]
+pub enum Transactions<'a>{
+    Write(TransactionWriteOp<'a>),
+    Zero(TransactionZeroOp<'a>),
+    Truncate(TransactionTruncateOp<'a>),
+    Remove(TransactionRemoveOp<'a>),
+    Unknown,
 }
 
 enum_from_primitive!{
     #[repr(u32)]
     #[derive(Debug, Clone,Eq,PartialEq)]
     pub enum TransactionOpTypes{
-      NOP =          0,
-      TOUCH =        9,   // cid, oid
-      WRITE =        10,  // cid, oid, offset, len, bl
-      ZERO =         11,  // cid, oid, offset, len
-      TRUNCATE =     12,  // cid, oid, len
-      REMOVE =       13,  // cid, oid
-      SETATTR =      14,  // cid, oid, attrname, bl
-      SETATTRS =     15,  // cid, oid, attrset
-      RMATTR =       16,  // cid, oid, attrname
-      CLONE =        17,  // cid, oid, newoid
-      CLONERANGE =   18,  // cid, oid, newoid, offset, len
-      CLONERANGE2 =  30,  // cid, oid, newoid, srcoff, len, dstoff
-      TRIMCACHE =    19,  // cid, oid, offset, len  **DEPRECATED**
-      MKCOLL =       20,  // cid
-      RMCOLL =       21,  // cid
-      COLL_ADD =     22,  // cid, oldcid, oid
-      COLL_REMOVE =  23,  // cid, oid
-      COLL_SETATTR = 24,  // cid, attrname, bl
-      COLL_RMATTR =  25,  // cid, attrname
-      COLL_SETATTRS = 26,  // cid, attrset
-      COLL_MOVE =    8,   // newcid, oldcid, oid
-      STARTSYNC =    27,  // start a sync
-      RMATTRS =      28,  // cid, oid
-      COLL_RENAME =       29,  // cid, newcid
-      OMAP_CLEAR = 31,   // cid
-      OMAP_SETKEYS = 32, // cid, attrset
-      OMAP_RMKEYS = 33,  // cid, keyset
-      OMAP_SETHEADER = 34, // cid, header
-      SPLIT_COLLECTION = 35, // cid, bits, destination
-      SPLIT_COLLECTION2 = 36, /* cid, bits, destination
+      Nop =          0,
+      Touch =        9,   // cid, oid
+      Write =        10,  // cid, oid, offset, len, bl
+      Zero =         11,  // cid, oid, offset, len
+      Truncate =     12,  // cid, oid, len
+      Remove =       13,  // cid, oid
+      SetAttr =      14,  // cid, oid, attrname, bl
+      SetAttrs =     15,  // cid, oid, attrset
+      RmAttr =       16,  // cid, oid, attrname
+      CloneOp =        17,  // cid, oid, newoid
+      CloneRange =   18,  // cid, oid, newoid, offset, len
+      CloneRange2 =  30,  // cid, oid, newoid, srcoff, len, dstoff
+      TrimCache =    19,  // cid, oid, offset, len  **DEPRECATED**
+      MkColl =       20,  // cid
+      RmColl =       21,  // cid
+      CollAdd =     22,  // cid, oldcid, oid
+      CollRemove =  23,  // cid, oid
+      CollSetAttr = 24,  // cid, attrname, bl
+      CollRmAttr =  25,  // cid, attrname
+      CollSetAttrs = 26,  // cid, attrset
+      CollMove =    8,   // newcid, oldcid, oid
+      StartSync =    27,  // start a sync
+      RmATTRS =      28,  // cid, oid
+      CollRename =       29,  // cid, newcid
+      OmapClear = 31,   // cid
+      OmapSetKeys = 32, // cid, attrset
+      OmapRmKeys = 33,  // cid, keyset
+      OmapSetHeader = 34, // cid, header
+      SplitCollection = 35, // cid, bits, destination
+      SplitCollection2 = 36, /* cid, bits, destination
                                     doesn't create the destination */
-      OMAP_RMKEYRANGE = 37,  // cid, oid, firstkey, lastkey
-      COLL_MOVE_RENAME = 38,   // oldcid, oldoid, newcid, newoid
-      SETALLOCHINT = 39,  // cid, oid, object_size, write_size
-      COLL_HINT = 40, // cid, type, bl
+      OmapRmKeyRange = 37,  // cid, oid, firstkey, lastkey
+      CollMoveRename = 38,   // oldcid, oldoid, newcid, newoid
+      SetAllocHint = 39,  // cid, oid, object_size, write_size
+      CollHint = 40, // cid, type, bl
     }
 }
 
@@ -3566,13 +3571,13 @@ fn test_osd_ecwrite_operation(){
 }
 
 #[derive(Debug,Eq,PartialEq)]
-pub struct GhObject {
-    pub hobj: HObject,
+pub struct GhObject<'a> {
+    pub hobj: HObject<'a>,
     pub generation: u64,
     pub shard_id: u8,
 }
 
-impl<'a> CephPrimitive<'a> for GhObject{
+impl<'a> CephPrimitive<'a> for GhObject<'a>{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             hobj: call!(HObject::read_from_wire)~
@@ -3605,11 +3610,13 @@ impl<'a> CephPrimitive<'a> for CollT<'a>{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             version: le_u8~
-            data: parse_str,
+            coll_t_len: le_u32~
+            data_str: take_str!(coll_t_len),
+            //data_str: dbg!(parse_str),
             ||{
                 CollT{
-                    version:version,
-                    data: data,
+                    version: version,
+                    data_str: data_str,
                 }
             }
         )
@@ -3622,66 +3629,24 @@ impl<'a> CephPrimitive<'a> for CollT<'a>{
     }
 }
 
-
 #[derive(Debug,Eq,PartialEq)]
-pub struct TransactionWriteOp{
-    pub cid: CollT,
-    pub oid: GhObject,
-    pub off: u64,
-    pub len: u64, //Size of data being written
-    pub data: &'a [u8],
-}
-
-
-/*
-#[derive(Debug,Eq,PartialEq)]
-pub struct TransactionOp{
-    pub op: u32,
-    pub cid: u32,
-    pub oid: u32,
-    pub off: u64,
+pub struct TransactionTruncateOp<'a>{
+    pub cid: CollT<'a>,
+    pub oid: GhObject<'a>,
     pub len: u64,
-    pub dest_cid: u32,
-    pub dest_oid: u32,                  //OP_CLONE, OP_CLONERANGE
-    pub dest_off: u64,                   //OP_CLONERANGE
-    pub hint_type: u32,                  //OP_COLL_HINT
-    pub expected_object_size: u64,       //OP_SETALLOCHINT
-    pub expected_write_size: u64,        //OP_SETALLOCHINT
-    pub split_bits: u32,                 //OP_SPLIT_COLLECTION2
-    pub split_rem: u32,                  //OP_SPLIT_COLLECTION2
 }
 
-impl<'a> CephPrimitive<'a> for TransactionOp{
+impl<'a> CephPrimitive<'a> for TransactionTruncateOp<'a>{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
-            op: le_u32~
-            cid: le_u32~
-            oid: le_u32~
-            off: le_u64~
-            len: le_u64~
-            dest_cid: le_u32~
-            dest_oid: le_u32~
-            dest_off: le_u64~
-            hint_type: le_u32~
-            expected_object_size: le_u64~
-            expected_write_size: le_u64~
-            split_bits: le_u32~
-            split_rem: le_u32,
+            cid: call!(CollT::read_from_wire)~
+            oid: call!(GhObject::read_from_wire)~
+            len: le_u64,
             ||{
-                TransactionOp{
-                    op: op,
-                    cid: cid,
-                    oid: oid,
-                    off: off,
-                    len: len,
-                    dest_cid: dest_cid,
-                    dest_oid: dest_oid,
-                    dest_off: dest_off,
-                    hint_type: hint_type,
-                    expected_object_size: expected_object_size,
-                    expected_write_size: expected_write_size,
-                    split_bits: split_bits,
-                    split_rem: split_rem,
+                TransactionTruncateOp{
+                    cid:cid,
+                    oid:oid,
+                    len:len,
                 }
             }
         )
@@ -3693,9 +3658,168 @@ impl<'a> CephPrimitive<'a> for TransactionOp{
         return Ok(buffer);
     }
 }
-*/
+
 #[derive(Debug,Eq,PartialEq)]
-pub struct Transaction{
+pub struct TransactionRemoveOp<'a>{
+    pub cid: CollT<'a>,
+    pub oid: GhObject<'a>,
+    pub len: u64, //Size of data being written
+}
+
+impl<'a> CephPrimitive<'a> for TransactionRemoveOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            cid: call!(CollT::read_from_wire)~
+            oid: call!(GhObject::read_from_wire)~
+            len: le_u64,
+            ||{
+                TransactionRemoveOp{
+                    cid:cid,
+                    oid:oid,
+                    len:len,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct TransactionZeroOp<'a>{
+    pub cid: CollT<'a>,
+    pub oid: GhObject<'a>,
+    pub off: u64,
+    pub len: u64, //Size of data being written
+}
+
+impl<'a> CephPrimitive<'a> for TransactionZeroOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            cid: call!(CollT::read_from_wire)~
+            oid: call!(GhObject::read_from_wire)~
+            off: le_u64~
+            len: le_u64,
+            ||{
+                TransactionZeroOp{
+                    cid:cid,
+                    oid:oid,
+                    off:off,
+                    len:len,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct TransactionWriteOp<'a>{
+    pub cid: CollT<'a>,
+    pub oid: GhObject<'a>,
+    pub off: u64,
+    pub len: u64, //Size of data being written
+    pub data: Option<&'a [u8]>, //We might not have the entire amount of data at one time.
+}
+
+impl<'a> CephPrimitive<'a> for TransactionWriteOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            cid: call!(CollT::read_from_wire)~
+            oid: call!(GhObject::read_from_wire)~
+            off: le_u64~
+            len: le_u64~
+            data: hard_opt!(take!(len)),
+            ||{
+                TransactionWriteOp{
+                    cid:cid,
+                    oid:oid,
+                    off:off,
+                    len:len,
+                    data:data
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+fn parse_transaction<'a>(input: &'a [u8]) -> nom::IResult<&[u8], Transactions<'a>>{
+    let transaction_type_bits = le_u32(input);
+
+    match transaction_type_bits{
+        nom::IResult::Done(unparsed_data, transaction_bits) =>{
+            let some_transaction = TransactionOpTypes::from_u32(transaction_bits);
+            let transaction = match some_transaction{
+                Some(t) => t,
+                None => {
+                    return nom::IResult::Done(unparsed_data, Transactions::Unknown);
+                }
+            };
+            match transaction{
+                TransactionOpTypes::Truncate => {
+                    chain!(unparsed_data,
+                        truncate_op: dbg!(call!(TransactionTruncateOp::read_from_wire)),
+                        ||{
+                            Transactions::Truncate(truncate_op)
+                        }
+                    )
+                },
+                TransactionOpTypes::Write => {
+                    chain!(unparsed_data,
+                        write_op: dbg!(call!(TransactionWriteOp::read_from_wire)),
+                        ||{
+                            Transactions::Write(write_op)
+                        }
+                    )
+                },
+                TransactionOpTypes::Zero => {
+                    chain!(unparsed_data,
+                        zero_op: dbg!(call!(TransactionZeroOp::read_from_wire)),
+                        ||{
+                            Transactions::Zero(zero_op)
+                        }
+                    )
+                },
+                TransactionOpTypes::Remove => {
+                    chain!(unparsed_data,
+                        remove_op: dbg!(call!(TransactionRemoveOp::read_from_wire)),
+                        ||{
+                            Transactions::Remove(remove_op)
+                        }
+                    )
+                },
+                //TODO: We don't have parsers for every possible variant yet
+                _ => {
+                    return nom::IResult::Done(unparsed_data, Transactions::Unknown);
+                }
+            }
+        },
+        nom::IResult::Incomplete(needed) => {
+            return nom::IResult::Incomplete(needed);
+        }
+        nom::IResult::Error(e) => {
+            return nom::IResult::Error(e);
+        },
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct Transaction<'a>{
     /*
     1063       ::encode(tbl, bl);
     1064       ::encode(tolerate_collection_add_enoent, bl);
@@ -3709,11 +3833,11 @@ pub struct Transaction{
     pub largest_data_len: u32,
     pub largest_data_off: u32,
     pub largest_data_off_in_tbl: u32,
-    pub transactions: Vec<Transactions>, //TODO: This is tricky because we might have a partial packet and can't decode all of the transactions
+    pub transactions: Vec<Transactions<'a>>, //TODO: This is tricky because we might have a partial packet and can't decode all of the transactions
     pub tolerate_collection_add_enoent: u8,
 }
 
-impl<'a> CephPrimitive<'a> for Transaction{
+impl<'a> CephPrimitive<'a> for Transaction<'a>{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             version: le_u8~
@@ -3724,7 +3848,8 @@ impl<'a> CephPrimitive<'a> for Transaction{
             largest_data_len: le_u32~
             largest_data_off: le_u32~
             largest_data_off_in_tbl: le_u32~
-            transactions: count!(parse_transaction, ops as usize)~
+            padding: le_u32~ //TODO: What is this field supposed to be?
+            transactions: dbg!(count!(call!(parse_transaction), ops as usize))~
             tolerate_collection_add_enoent: le_u8,
             ||{
                 Transaction{
@@ -3736,6 +3861,8 @@ impl<'a> CephPrimitive<'a> for Transaction{
                     largest_data_len: largest_data_len,
                     largest_data_off: largest_data_off,
                     largest_data_off_in_tbl: largest_data_off_in_tbl,
+                    transactions: transactions,
+                    tolerate_collection_add_enoent: tolerate_collection_add_enoent,
                 }
             }
         )
@@ -3758,12 +3885,12 @@ pub struct ECWriteOperation<'a>{
     pub reqid: osd_decode::OsdReqidT,
     pub soid: HObject<'a>,
     pub stats: osd_decode::PgStatT<'a>,
-    pub transaction: Transaction,
+    pub transaction: Transaction<'a>,
     /*
     pub at_version: u64,
     pub trim_to: u64,
     pub trim_rollback_to: u64,
-    pub log_entries: Vec<osd_decode::pg_log_entry_t<'a>>,
+    pub log_entries: Vec<osd_decode::PgLogEntryT<'a>>,
     pub temp_added: HObject<'a>,
     pub temp_removed: HObject<'a>,
     pub updated_hit_set_history: Option<osd_decode::pg_hit_set_history_t>,
@@ -3787,7 +3914,7 @@ impl<'a> CephPrimitive<'a> for ECWriteOperation<'a>{
             trim_to: le_u64 ~
             trim_rollback_to: le_u64 ~
             log_entries: le_u32 ~
-            log_entries: count!(call!(osd_decode::pg_log_entry_t::read_from_wire), log_entries as usize) ~
+            log_entries: count!(call!(osd_decode::PgLogEntryT::read_from_wire), log_entries as usize) ~
             temp_added: call!(HObject::read_from_wire)~
             temp_removed: call!(HObject::read_from_wire)~
             updated_hit_set_history: hard_opt!(call!(osd_decode::pg_hit_set_history_t::read_from_wire)),

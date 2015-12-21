@@ -1,4 +1,3 @@
-#![recursion_limit="9000"]
 extern crate nom;
 extern crate num;
 extern crate uuid;

@@ -256,7 +256,7 @@ fn main() {
     let args = get_arguments();
     //TODO make configurable via cli or config arg
     simple_logger::init_with_level(args.log_level).unwrap();
-
+    info!("Initialized logger with {:?}", args.log_level);
     match check_user(){
         Ok(_) => {},
         Err(_) =>{
@@ -315,12 +315,13 @@ fn main() {
                                 trace!("logging {:?}", result);
                                 let _ = process_packet(&result.header, &result.ceph_message, &args);
                             },
+                            nom::IResult::Error(e) => trace!("Problem Parsing: {:?}", e),
                             _ => {}
                         };
                         // break
                     },
                     //We missed a packet, ignore
-                    None => {},
+                    None => trace!("no packets?"),
                 }
             }
         }

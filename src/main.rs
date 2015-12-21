@@ -255,7 +255,7 @@ fn log_msg_to_influx(header: &serial::PacketHeader, msg: &serial::Message, outpu
                 }
             },
         };
-        let size = op.operation.payload_size as f64;
+        let size = op.operation.size as f64;
         let count = op.operation_count as i64;
         let flags: String = format!("{:?}", op.flags).clone();
         let mut measurement = Measurement::new("ceph");

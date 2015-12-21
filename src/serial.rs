@@ -1779,6 +1779,7 @@ fn read_messages_from_wire<'a>(cursor: &'a [u8], msg_type: &CephMsgType) -> nom:
             )
         },
         &CephMsgType::MsgOsdOp => {
+            println!("osd op msg_type: {:?}", cursor);
             chain!(cursor,
                 osdop: call!(CephOsdOperation::read_from_wire),
                 || {
@@ -1799,7 +1800,6 @@ fn read_messages_from_wire<'a>(cursor: &'a [u8], msg_type: &CephMsgType) -> nom:
             )
         },
         &CephMsgType::MsgOsdSubop => {
-            println!("osd sub op msg_type: {:?}", cursor);
             chain!(cursor,
                 osdop: call!(CephOsdSubOperation::read_from_wire),
                 || {
@@ -4060,6 +4060,7 @@ pub struct CephOsdOperation<'a>{
 
 impl<'a> CephPrimitive<'a> for CephOsdOperation<'a>{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        println!("osd_operation input: {:?}", input);
         chain!(input,
             client: le_u32 ~
             map_epoch: le_u32 ~
@@ -4420,7 +4421,7 @@ pub struct HObject<'a> {
 
 impl<'a> CephPrimitive<'a> for HObject<'a>{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
-        println!("input: {:?}", input);
+        //println!("input: {:?}", input);
         chain!(input,
             version: le_u8 ~
             compat_version: le_u8~

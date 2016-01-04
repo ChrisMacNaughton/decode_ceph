@@ -216,14 +216,33 @@ fn log_msg_to_stdout(header: &serial::PacketHeader, msg: &serial::Message, outpu
     Ok(())
 }
 
+fn setup_osd_op(src_addr: String, dst_addr: String, op: &serial::CephOsdOperation, client: &Client) {
+    let size = op.operation.size as f64;
+    let count = op.operation_count as i64;
+    let flags: String = format!("{:?}", op.flags).clone();
+
+    let mut measurement = Measurement::new("ceph");
+
+    if op.flags.contains(serial::CEPH_OSD_FLAG_WRITE) {
+        measurement.add_tag("type", "write");
+    } else if op.flags.contains(serial::CEPH_OSD_FLAG_READ) {
+        measurement.add_tag("type", "read");
+    } else {
+        trace!("{:?} doesn't contain {:?}", op.flags, vec![serial::CEPH_OSD_FLAG_WRITE, serial::CEPH_OSD_FLAG_READ]);
+    }
+    measurement.add_tag("src_address", src_addr.as_ref());
+    measurement.add_tag("dst_address", dst_addr.as_ref());
+
+    measurement.add_field("size", Value::Float(size));
+    measurement.add_field("operation", Value::String(flags.as_ref()));
+    measurement.add_field("count", Value::Integer(count));
+
+    let res = client.write_one(measurement, None);
+    debug!("{:?}", res);
+}
+
 fn log_msg_to_influx(header: &serial::PacketHeader, msg: &serial::Message, output_args: &Args)->Result<(),String>{
     if output_args.influx.is_some() && output_args.outputs.contains(&"influx".to_string()) {
-        let op = match *msg{
-            serial::Message::OsdOp(ref osd_op) => osd_op,
-            //serial::Message::OsdSubop(ref sub_op) => sub_op,
-            _ => return Err("Bad type".to_string())
-        };
-
         let influx = &output_args.influx.clone().unwrap();
         let credentials = Credentials {
             username: influx.user.as_ref(),
@@ -233,8 +252,6 @@ fn log_msg_to_influx(header: &serial::PacketHeader, msg: &serial::Message, outpu
         let host = format!("http://{}:{}",influx.host, influx.port);
         let hosts = vec![host.as_ref()];
         let client = create_client(credentials, hosts);
-
-
 
         let src_addr: String = match header.src_v4addr{
             Some(addr) => addr.to_string(),
@@ -255,27 +272,15 @@ fn log_msg_to_influx(header: &serial::PacketHeader, msg: &serial::Message, outpu
                 }
             },
         };
-        let size = op.operation.size as f64;
-        let count = op.operation_count as i64;
-        let flags: String = format!("{:?}", op.flags).clone();
-        let mut measurement = Measurement::new("ceph");
 
-        if op.flags.contains(serial::CEPH_OSD_FLAG_WRITE) {
-            measurement.add_tag("type", "write");
-        } else if op.flags.contains(serial::CEPH_OSD_FLAG_READ) {
-            measurement.add_tag("type", "read");
-        } else {
-            trace!("{:?} doesn't contain {:?}", op.flags, vec![serial::CEPH_OSD_FLAG_WRITE, serial::CEPH_OSD_FLAG_READ]);
-        }
-        measurement.add_tag("src_address", src_addr.as_ref());
-        measurement.add_tag("dst_address", dst_addr.as_ref());
-
-        measurement.add_field("size", Value::Float(size));
-        measurement.add_field("operation", Value::String(flags.as_ref()));
-        measurement.add_field("count", Value::Integer(count));
-
-        let res = client.write_one(measurement, None);
-        debug!("{:?}", res);
+        let _ = match *msg{
+            serial::Message::OsdOp(ref osd_op) => {
+                setup_osd_op(src_addr, dst_addr, osd_op, &client); 
+                return Ok(());
+            },
+            //serial::Message::OsdSubop(ref sub_op) => sub_op,
+            _ => return Err("Bad type".to_string())
+        };
     }
     Ok(())
 }

@@ -3,6 +3,7 @@ extern crate crc;
 extern crate nom;
 extern crate num;
 extern crate rand;
+extern crate rustc_serialize;
 extern crate time;
 extern crate uuid;
 
@@ -19,6 +20,7 @@ use self::nom::IResult::Done;
 use self::num::FromPrimitive;
 use self::rand::os::OsRng;
 use self::rand::Rng;
+use self::rustc_serialize::json;
 use self::uuid::{ParseError, Uuid};
 
 //Std libs
@@ -1995,6 +1997,7 @@ pub enum CephMsgType{
 }
 
 bitflags!{
+    #[derive(RustcEncodable)]
     flags OsdOp: u32 {
         const CEPH_OSD_FLAG_ACK =            0x0001,  /* want (or is) "ack" ack */
         const CEPH_OSD_FLAG_ONNVRAM =        0x0002,  /* want (or is) "onnvram" ack */
@@ -2157,7 +2160,7 @@ fn test_object_locator(){
     assert_eq!(Done(x, expected_result), result);
 }
 
-#[derive(Debug,Eq,PartialEq)]
+#[derive(Debug,Eq,PartialEq,RustcEncodable)]
 pub struct ObjectLocator<'a>{
     pub encoding_version: u8,
     pub min_compat_version: u8,
@@ -2223,7 +2226,7 @@ fn test_placement_group(){
     assert_eq!(Done(x, expected_result), result);
 }
 
-#[derive(Debug,Eq,PartialEq)]
+#[derive(Debug,Eq,PartialEq,RustcEncodable)]
 pub struct PlacementGroup{
     pub group_version: u8,
     pub pool: u64,
@@ -2604,7 +2607,7 @@ fn test_object_id(){
 }
 
 
-#[derive(Debug,Eq,PartialEq)]
+#[derive(Debug,Eq,PartialEq,RustcEncodable)]
 pub struct ObjectId<'a>{
     pub size: u32,
     pub data:  &'a [u8]
@@ -2656,7 +2659,7 @@ fn test_operation(){
     assert_eq!(Done(x, expected_result), result);
 }
 
-#[derive(Debug,Eq,PartialEq)]
+#[derive(Debug,Eq,PartialEq,RustcEncodable)]
 pub struct Operation{
     pub operation: u16,
     pub flags: OsdOp,
@@ -3558,8 +3561,9 @@ fn test_osd_ecwrite_operation(){
         2, 2, 21, 0, 0, 0,
         //Where is the entity_name type? 1,2,4,8 or 20
         8, 236, 16, 0, 0, 0, 0, 0, 0, 194, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 3, 80, 0, 0, 0, 0, 0, 0, 0, 47, 0, 0, 0, 98, 101, 110, 99, 104, 109, 97, 114, 107, 95, 100, 97, 116, 97, 95, 105, 112, 45, 49, 55, 50, 45, 51, 49, 45, 51, 55, 45, 49, 52, 53, 95, 56, 48, 51, 49, 56, 95, 111, 98, 106, 101, 99, 116, 55, 48, 53, 254, 255, 255, 255, 255, 255, 255, 255, 247, 200, 68, 250, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 17, 8, 249, 1, 0, 0, 39, 0, 0, 0, 0, 0, 0, 0, 127, 0, 0, 0, 104, 0, 0, 0, 0, 0, 0, 0, 127, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 107, 0, 0, 0, 108, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 45, 165, 113, 86, 120, 185, 189, 1, 2, 2, 178, 0, 0, 0, 9, 3, 168, 0, 0, 0, 0, 147, 0, 3, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 143, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 0, 0, 0, 104, 160, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 39, 0, 0, 0, 0, 0, 0, 0, 39, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 5, 0, 0, 0, 19, 0, 0, 0, 14, 0, 0, 0, 9, 0, 0, 0, 18, 0, 0, 0, 6, 0, 0, 0, 11, 0, 0, 0, 21, 0, 0, 0, 10, 0, 0, 0, 28, 0, 0, 0, 13, 0, 0, 0, 22, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 5, 0, 0, 0, 19, 0, 0, 0, 14, 0, 0, 0, 9, 0, 0, 0, 18, 0, 0, 0, 6, 0, 0, 0, 11, 0, 0, 0, 21, 0, 0, 0, 10, 0, 0, 0, 28, 0, 0, 0, 13, 0, 0, 0, 22, 0, 0, 0, 0, 0, 0, 0, 207, 180, 113, 86, 48, 230, 127, 0, 46, 165, 113, 86, 104, 180, 212, 24, 207, 180, 113, 86, 48, 230, 127, 0, 207, 180, 113, 86, 48, 230, 127, 0, 207, 180, 113, 86, 48, 230, 127, 0, 107, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 45, 165, 113, 86, 120, 185, 189, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 5, 0, 0, 0, 0, 0, 7, 5, 65, 107, 6, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 160, 103, 6, 0, 0, 0, 0, 0, 135, 0, 0, 0,
-        32, 107, 6, 0, /*OP_WRITE */10, 0, 0, 0, /*OP_WRITE*/3, 11, 0, 0, 0, 51, 46, 102, 55, 115, 51, 95, 104, 101, 97, 100, 5,
-        3, 89, 0, 0, 0, 0, 0, 0, 0, 47, 0, 0, 0, 98, 101, 110, 99, 104, 109, 97, 114, 107, 95, 100, 97, 116, 97, 95, 105, 112, 45,
+        32, 107, 6, 0, /*OP_WRITE */10, 0, 0, 0, /*OP_WRITE*/3, 11, 0, 0, 0, 51, 46, 102, 55, 115, 51, 95, 104, 101, 97, 100,
+        /*HObject*/
+        5,3, 89, 0, 0, 0, 0, 0, 0, 0, 47, 0, 0, 0, 98, 101, 110, 99, 104, 109, 97, 114, 107, 95, 100, 97, 116, 97, 95, 105, 112, 45,
         49, 55, 50, 45, 51, 49, 45, 51, 55, 45, 49, 52, 53, 95, 56, 48, 51, 49, 56, 95, 111, 98, 106, 101, 99, 116, 55, 48, 53, 254,
         255, 255, 255, 255, 255, 255, 255, 247, 200, 68, 250, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255,
         3, 0, 0, 0, 0, 0, 0, 0, 0, 160, 103, 6, 0, 0, 0, 0, 0, 160, 103, 6, 0,
@@ -3580,6 +3584,7 @@ pub struct GhObject<'a> {
 
 impl<'a> CephPrimitive<'a> for GhObject<'a>{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        println!("GhObject input: {:?}", input);
         chain!(input,
             hobj: call!(HObject::read_from_wire)~
             generation: le_u64~
@@ -4038,7 +4043,7 @@ fn test_osd_operation(){
     assert_eq!(Done(x, expected_result), result);
 }
 
-#[derive(Debug,Eq,PartialEq)]
+#[derive(Debug,Eq,PartialEq,RustcEncodable)]
 pub struct CephOsdOperation<'a>{
     pub client: u32,
     pub map_epoch: u32,
@@ -4892,7 +4897,7 @@ fn test_utime(){
     assert_eq!(Done(x, expected_result), result);
 }
 
-#[derive(Debug,Eq,PartialEq)]
+#[derive(Debug,Eq,PartialEq,RustcEncodable)]
 pub struct Utime {
     pub tv_sec: u32,  // Seconds since epoch.
     pub tv_nsec: u32, // Nanoseconds since the last second.

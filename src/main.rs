@@ -5,13 +5,14 @@
 #[macro_use] extern crate nom;
 #[macro_use] extern crate log;
 extern crate byteorder;
+extern crate influent;
 extern crate num;
 extern crate output_args;
 extern crate pcap;
-extern crate users;
 extern crate simple_logger;
+extern crate rustc_serialize;
 extern crate time;
-extern crate influent;
+extern crate users;
 
 mod serial;
 mod crypto;
@@ -197,6 +198,7 @@ fn log_msg_to_carbon(header: &serial::PacketHeader, msg: &serial::Message, outpu
 }
 
 fn log_msg_to_stdout(header: &serial::PacketHeader, msg: &serial::Message, output_args: &Args)->Result<(),String>{
+    println!("stdout Message: {:?}", msg);
     if output_args.stdout.is_some(){
         let op = match *msg{
             serial::Message::OsdOp(ref osd_op) => osd_op,
@@ -275,7 +277,7 @@ fn log_msg_to_influx(header: &serial::PacketHeader, msg: &serial::Message, outpu
 
         let _ = match *msg{
             serial::Message::OsdOp(ref osd_op) => {
-                setup_osd_op(src_addr, dst_addr, osd_op, &client); 
+                setup_osd_op(src_addr, dst_addr, osd_op, &client);
                 return Ok(());
             },
             //serial::Message::OsdSubop(ref sub_op) => sub_op,

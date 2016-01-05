@@ -1253,6 +1253,7 @@ pub enum Transactions<'a>{
     MakeCollection(TransactionMakeCollectionOp<'a>),
     RemoveCollection(TransactionRemoveCollectionOp<'a>),
     SetAllocHint(TransactionSetAllocHintOp<'a>),
+    CollectionMoveRename(TransactionCollectionMoveRenameOp<'a>),
     Nop,
     Unknown,
 }
@@ -3924,6 +3925,39 @@ impl<'a> CephPrimitive<'a> for TransactionRemoveCollectionOp<'a>{
 }
 
 #[derive(Debug,Eq,PartialEq)]
+pub struct TransactionCollectionMoveRenameOp<'a>{
+    pub old_cid: CollT<'a>,
+    pub old_oid: GhObject<'a>,
+    pub cid: CollT<'a>,
+    pub oid: GhObject<'a>,
+}
+
+impl<'a> CephPrimitive<'a> for TransactionCollectionMoveRenameOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            old_cid: call!(CollT::read_from_wire)~
+            old_oid: call!(GhObject::read_from_wire)~
+            cid: call!(CollT::read_from_wire)~
+            oid: call!(GhObject::read_from_wire),
+            ||{
+                TransactionCollectionMoveRenameOp{
+                    old_cid:old_cid,
+                    old_oid:old_oid,
+                    cid:cid,
+                    oid:oid,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
 pub struct TransactionCloneOp<'a>{
     pub cid: CollT<'a>,
     pub oid: GhObject<'a>,
@@ -4092,6 +4126,14 @@ fn parse_transaction<'a>(input: &'a [u8]) -> nom::IResult<&[u8], Transactions<'a
                         truncate_op: dbg!(call!(TransactionTruncateOp::read_from_wire)),
                         ||{
                             Transactions::Truncate(truncate_op)
+                        }
+                    )
+                },
+                TransactionOpTypes::CollMoveRename =>{
+                    chain!(unparsed_data,
+                        move_op: dbg!(call!(TransactionCollectionMoveRenameOp::read_from_wire)),
+                        ||{
+                            Transactions::CollectionMoveRename(move_op)
                         }
                     )
                 },

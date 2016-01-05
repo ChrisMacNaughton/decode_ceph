@@ -1243,6 +1243,17 @@ pub enum Transactions<'a>{
     Zero(TransactionZeroOp<'a>),
     Truncate(TransactionTruncateOp<'a>),
     Remove(TransactionRemoveOp<'a>),
+    SetAttr(TransactionSetAttrOp<'a>),
+    SetAttrs(TransactionSetAttrsOp<'a>),
+    RemoveAttr(TransactionRemoveAttrOp<'a>),
+    RemoveAttrs(TransactionRemoveAttrsOp<'a>),
+    Clone(TransactionCloneOp<'a>),
+    CloneRange(TransactionCloneRangeOp<'a>),
+    Touch(TransactionTouchOp<'a>),
+    MakeCollection(TransactionMakeCollectionOp<'a>),
+    RemoveCollection(TransactionRemoveCollectionOp<'a>),
+    SetAllocHint(TransactionSetAllocHintOp<'a>),
+    Nop,
     Unknown,
 }
 
@@ -1272,7 +1283,7 @@ enum_from_primitive!{
       CollSetAttrs = 26,  // cid, attrset
       CollMove =    8,   // newcid, oldcid, oid
       StartSync =    27,  // start a sync
-      RmATTRS =      28,  // cid, oid
+      RmAttrs =      28,  // cid, oid
       CollRename =       29,  // cid, newcid
       OmapClear = 31,   // cid
       OmapSetKeys = 32, // cid, attrset
@@ -3324,17 +3335,6 @@ fn test_osd_ecread_operation(){
     assert_eq!(Done(x, expected_result), result);
 }
 
-//TODO: Can this be made more generic?
-fn parse_vec_pair_64<'a>(input: &'a [u8])->nom::IResult<&[u8], Vec<(u64,u64)>>{
-    chain!(input,
-        length: le_u32 ~
-        v: count!(pair!(le_u64, le_u64), length as usize),
-        ||{
-            v
-        }
-    )
-}
-
 #[derive(Debug,Eq,PartialEq)]
 pub struct ECReadOperation<'a> {
     pub version: u8,
@@ -3584,7 +3584,6 @@ pub struct GhObject<'a> {
 
 impl<'a> CephPrimitive<'a> for GhObject<'a>{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
-        println!("GhObject input: {:?}", input);
         chain!(input,
             hobj: call!(HObject::read_from_wire)~
             generation: le_u64~
@@ -3667,20 +3666,143 @@ impl<'a> CephPrimitive<'a> for TransactionTruncateOp<'a>{
 pub struct TransactionRemoveOp<'a>{
     pub cid: CollT<'a>,
     pub oid: GhObject<'a>,
-    pub len: u64, //Size of data being written
 }
 
 impl<'a> CephPrimitive<'a> for TransactionRemoveOp<'a>{
     fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
         chain!(input,
             cid: call!(CollT::read_from_wire)~
-            oid: call!(GhObject::read_from_wire)~
-            len: le_u64,
+            oid: call!(GhObject::read_from_wire),
             ||{
                 TransactionRemoveOp{
                     cid:cid,
                     oid:oid,
-                    len:len,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct TransactionRemoveAttrOp<'a>{
+    pub cid: CollT<'a>,
+    pub oid: GhObject<'a>,
+    pub name: &'a str,
+}
+
+impl<'a> CephPrimitive<'a> for TransactionRemoveAttrOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            cid: call!(CollT::read_from_wire)~
+            oid: call!(GhObject::read_from_wire)~
+            name: parse_str,
+            ||{
+                TransactionRemoveAttrOp{
+                    cid:cid,
+                    oid:oid,
+                    name:name,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+//Remove all attrs from the object
+#[derive(Debug,Eq,PartialEq)]
+pub struct TransactionRemoveAttrsOp<'a>{
+    pub cid: CollT<'a>,
+    pub oid: GhObject<'a>,
+}
+
+impl<'a> CephPrimitive<'a> for TransactionRemoveAttrsOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            cid: call!(CollT::read_from_wire)~
+            oid: call!(GhObject::read_from_wire),
+            ||{
+                TransactionRemoveAttrsOp{
+                    cid:cid,
+                    oid:oid,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct TransactionSetAttrOp<'a>{
+    pub cid: CollT<'a>,
+    pub oid: GhObject<'a>,
+    pub name: &'a str,
+    pub value: &'a [u8],
+}
+
+impl<'a> CephPrimitive<'a> for TransactionSetAttrOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            cid: call!(CollT::read_from_wire)~
+            oid: call!(GhObject::read_from_wire)~
+            name: parse_str~
+            value_len: le_u32~
+            value: take!(value_len),
+            ||{
+                TransactionSetAttrOp{
+                    cid:cid,
+                    oid:oid,
+                    name:name,
+                    value:value,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct TransactionSetAttrsOp<'a>{
+    pub cid: CollT<'a>,
+    pub oid: GhObject<'a>,
+    pub attrset: Vec<(&'a str,&'a [u8])>,
+}
+
+impl<'a> CephPrimitive<'a> for TransactionSetAttrsOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            cid: call!(CollT::read_from_wire)~
+            oid: call!(GhObject::read_from_wire)~
+            attrs_len: le_u32~
+            attrset: count!(
+                pair!(parse_str, parse_opaque),
+                attrs_len as usize
+            ),
+            ||{
+                TransactionSetAttrsOp{
+                    cid:cid,
+                    oid:oid,
+                    attrset: attrset,
                 }
             }
         )
@@ -3714,6 +3836,183 @@ impl<'a> CephPrimitive<'a> for TransactionZeroOp<'a>{
                     oid:oid,
                     off:off,
                     len:len,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct TransactionTouchOp<'a>{
+    pub cid: CollT<'a>,
+    pub oid: GhObject<'a>,
+}
+
+impl<'a> CephPrimitive<'a> for TransactionTouchOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            cid: call!(CollT::read_from_wire)~
+            oid: call!(GhObject::read_from_wire),
+            ||{
+                TransactionTouchOp{
+                    cid:cid,
+                    oid:oid,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct TransactionMakeCollectionOp<'a>{
+    pub cid: CollT<'a>,
+}
+
+impl<'a> CephPrimitive<'a> for TransactionMakeCollectionOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            cid: call!(CollT::read_from_wire),
+            ||{
+                TransactionMakeCollectionOp{
+                    cid:cid,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct TransactionRemoveCollectionOp<'a>{
+    pub cid: CollT<'a>,
+}
+
+impl<'a> CephPrimitive<'a> for TransactionRemoveCollectionOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            cid: call!(CollT::read_from_wire),
+            ||{
+                TransactionRemoveCollectionOp{
+                    cid:cid,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct TransactionCloneOp<'a>{
+    pub cid: CollT<'a>,
+    pub oid: GhObject<'a>,
+    pub noid: GhObject<'a>,
+}
+
+impl<'a> CephPrimitive<'a> for TransactionCloneOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            cid: call!(CollT::read_from_wire)~
+            oid: call!(GhObject::read_from_wire)~
+            noid: call!(GhObject::read_from_wire),
+            ||{
+                TransactionCloneOp{
+                    cid:cid,
+                    oid:oid,
+                    noid:noid,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct TransactionSetAllocHintOp<'a>{
+    pub cid: CollT<'a>,
+    pub oid: GhObject<'a>,
+    pub expected_object_size: u64,
+    pub expected_write_size: u64,
+}
+
+impl<'a> CephPrimitive<'a> for TransactionSetAllocHintOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            cid: call!(CollT::read_from_wire)~
+            oid: call!(GhObject::read_from_wire)~
+            expected_object_size: le_u64~
+            expected_write_size: le_u64,
+            ||{
+                TransactionSetAllocHintOp{
+                    cid:cid,
+                    oid:oid,
+                    expected_object_size: expected_object_size,
+                    expected_write_size: expected_write_size,
+                }
+            }
+        )
+    }
+
+	fn write_to_wire(&self) -> Result<Vec<u8>, SerialError>{
+        let mut buffer:Vec<u8> = Vec::new();
+
+        return Ok(buffer);
+    }
+}
+
+#[derive(Debug,Eq,PartialEq)]
+pub struct TransactionCloneRangeOp<'a>{
+    pub cid: CollT<'a>,
+    pub oid: GhObject<'a>,
+    pub noid: GhObject<'a>,
+    pub src_offset: u64,
+    pub src_len: u64,
+    pub dst_offset: u64,
+}
+
+impl<'a> CephPrimitive<'a> for TransactionCloneRangeOp<'a>{
+    fn read_from_wire(input: &'a [u8]) -> nom::IResult<&[u8], Self>{
+        chain!(input,
+            cid: call!(CollT::read_from_wire)~
+            oid: call!(GhObject::read_from_wire)~
+            noid: call!(GhObject::read_from_wire)~
+            src_offset: le_u64~
+            src_len: le_u64~
+            dst_offset: le_u64,
+            ||{
+                TransactionCloneRangeOp{
+                    cid:cid,
+                    oid:oid,
+                    noid:noid,
+                    src_offset: src_offset,
+                    src_len: src_len,
+                    dst_offset: dst_offset,
                 }
             }
         )
@@ -3767,6 +4066,7 @@ fn parse_transaction<'a>(input: &'a [u8]) -> nom::IResult<&[u8], Transactions<'a
 
     match transaction_type_bits{
         nom::IResult::Done(unparsed_data, transaction_bits) =>{
+            println!("Trying to decode transaction type: {:?}", transaction_bits);
             let some_transaction = TransactionOpTypes::from_u32(transaction_bits);
             let transaction = match some_transaction{
                 Some(t) => t,
@@ -3775,6 +4075,18 @@ fn parse_transaction<'a>(input: &'a [u8]) -> nom::IResult<&[u8], Transactions<'a
                 }
             };
             match transaction{
+                TransactionOpTypes::Touch => {
+                    chain!(unparsed_data,
+                        touch_op: dbg!(call!(TransactionTouchOp::read_from_wire)),
+                        ||{
+                            Transactions::Touch(touch_op)
+                        }
+                    )
+                },
+                //No Op, nuff said
+                TransactionOpTypes::Nop => {
+                    nom::IResult::Done(unparsed_data, Transactions::Nop)
+                },
                 TransactionOpTypes::Truncate => {
                     chain!(unparsed_data,
                         truncate_op: dbg!(call!(TransactionTruncateOp::read_from_wire)),
@@ -3788,6 +4100,38 @@ fn parse_transaction<'a>(input: &'a [u8]) -> nom::IResult<&[u8], Transactions<'a
                         write_op: dbg!(call!(TransactionWriteOp::read_from_wire)),
                         ||{
                             Transactions::Write(write_op)
+                        }
+                    )
+                },
+                TransactionOpTypes::CloneOp => {
+                    chain!(unparsed_data,
+                        clone_op: dbg!(call!(TransactionCloneOp::read_from_wire)),
+                        ||{
+                            Transactions::Clone(clone_op)
+                        }
+                    )
+                },
+                TransactionOpTypes::CloneRange2 => {
+                    chain!(unparsed_data,
+                        clone_op: dbg!(call!(TransactionCloneRangeOp::read_from_wire)),
+                        ||{
+                            Transactions::CloneRange(clone_op)
+                        }
+                    )
+                },
+                TransactionOpTypes::MkColl => {
+                    chain!(unparsed_data,
+                        mkcoll_op: dbg!(call!(TransactionMakeCollectionOp::read_from_wire)),
+                        ||{
+                            Transactions::MakeCollection(mkcoll_op)
+                        }
+                    )
+                },
+                TransactionOpTypes::RmColl => {
+                    chain!(unparsed_data,
+                        rm_op: dbg!(call!(TransactionRemoveCollectionOp::read_from_wire)),
+                        ||{
+                            Transactions::RemoveCollection(rm_op)
                         }
                     )
                 },
@@ -3807,8 +4151,49 @@ fn parse_transaction<'a>(input: &'a [u8]) -> nom::IResult<&[u8], Transactions<'a
                         }
                     )
                 },
+                TransactionOpTypes::SetAttr => {
+                    chain!(unparsed_data,
+                        set_attr_op: dbg!(call!(TransactionSetAttrOp::read_from_wire)),
+                        ||{
+                            Transactions::SetAttr(set_attr_op)
+                        }
+                    )
+                },
+                TransactionOpTypes::SetAttrs => {
+                    chain!(unparsed_data,
+                        set_attrs_op: dbg!(call!(TransactionSetAttrsOp::read_from_wire)),
+                        ||{
+                            Transactions::SetAttrs(set_attrs_op)
+                        }
+                    )
+                },
+                TransactionOpTypes::RmAttr => {
+                    chain!(unparsed_data,
+                        rm_attr_op: dbg!(call!(TransactionRemoveAttrOp::read_from_wire)),
+                        ||{
+                            Transactions::RemoveAttr(rm_attr_op)
+                        }
+                    )
+                },
+                TransactionOpTypes::RmAttrs => {
+                    chain!(unparsed_data,
+                        rm_attrs_op: dbg!(call!(TransactionRemoveAttrsOp::read_from_wire)),
+                        ||{
+                            Transactions::RemoveAttrs(rm_attrs_op)
+                        }
+                    )
+                },
+                TransactionOpTypes::SetAllocHint => {
+                    chain!(unparsed_data,
+                        hint_op: dbg!(call!(TransactionSetAllocHintOp::read_from_wire)),
+                        ||{
+                            Transactions::SetAllocHint(hint_op)
+                        }
+                    )
+                },
                 //TODO: We don't have parsers for every possible variant yet
                 _ => {
+                    println!("Unimplemented transaction: {:?}", transaction);
                     return nom::IResult::Done(unparsed_data, Transactions::Unknown);
                 }
             }
@@ -5597,6 +5982,27 @@ pub fn parse_str<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], &'a str> {
         s: take_str!(length),
         ||{
             s
+        }
+    )
+}
+//Used to parse Ceph's bufferlists.  They're just opaque blobs of bytes.
+fn parse_opaque<'a>(i: &'a [u8]) -> nom::IResult<&'a [u8], &'a [u8]> {
+    chain!(i,
+        length: le_u32 ~
+        s: take!(length),
+        ||{
+            s
+        }
+    )
+}
+
+//TODO: Can this be made more generic?
+fn parse_vec_pair_64<'a>(input: &'a [u8])->nom::IResult<&[u8], Vec<(u64,u64)>>{
+    chain!(input,
+        length: le_u32 ~
+        v: count!(pair!(le_u64, le_u64), length as usize),
+        ||{
+            v
         }
     )
 }

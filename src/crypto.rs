@@ -5,28 +5,21 @@ extern crate rand;
 extern crate time;
 use serial;
 
-//use self::byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 //use self::num::FromPrimitive;
+use self::byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use self::rust_crypto::{ symmetriccipher, buffer, aes, blockmodes };
 use self::rust_crypto::buffer::{ ReadBuffer, WriteBuffer, BufferResult };
 use self::rand::os::OsRng;
 
 use self::rand::Rng;
 
+use std::io::Cursor;
 use std::io::prelude::*;
 use std::ops::Add;
 
 static CEPH_AES_IV: &'static str = "cephsageyudagreg";
 static AUTH_ENC_MAGIC: &'static str = "0xff009cad8826aa55ull";
 /*
-  #define CEPH_AES_IV "cephsageyudagreg"
-  #define CEPHX_GET_AUTH_SESSION_KEY      0x0100
-  #define CEPHX_GET_PRINCIPAL_SESSION_KEY 0x0200
-  #define CEPHX_GET_ROTATING_KEY          0x0400
-
-  #define CEPHX_REQUEST_TYPE_MASK            0x0F00
-  #define CEPHX_CRYPT_ERR                 1
-
   Ceph X protocol
 
   First, the principal has to authenticate with the authenticator. A
@@ -84,11 +77,33 @@ static AUTH_ENC_MAGIC: &'static str = "0xff009cad8826aa55ull";
   the service (steps 1 and 2), and the second one would be to authenticate with
   the service, using that ticket.
 */
+enum_from_primitive! {
+#[repr(u16)]
+#[derive(Debug, Clone,Eq,PartialEq)]
+pub enum CephxAuthProtocol{
+     GetAuthSessionKey     =0x0100,
+     GetPrincipalSessionKey=0x0200,
+     GetRotatingKey        =0x0400,
+     RequestTypeMask       =0x0F00,
+}
+}
+
 enum MonitorClientState {
     None,
     Negotiating,
     Authenticating,
     HaveSession,
+}
+
+#[test]
+fn test_cephx_challenge_blob(){
+    let mut rdr = Cursor::new(vec![0x3b ,0x4f ,0x15 ,0x04 ,0x38 ,0xf8 ,0x93 ,0x7a]);
+    let server_challenge: u64 = rdr.read_u64::<LittleEndian>().unwrap();
+    let client_admin_key: &[u8] = &[];
+
+    let mut b = CephXChallengeBlob::new(server_challenge);
+    let result = b.encrypt_key(client_admin_key).unwrap();
+    println!("result: {:?}", result);
 }
 
 pub struct CephXChallengeBlob{
@@ -97,24 +112,29 @@ pub struct CephXChallengeBlob{
 }
 
 impl CephXChallengeBlob{
-
     //Start a new challenge
-    fn new()->Self{
+    fn new(server_challenge: u64)->Self{
         let mut rand_source = OsRng::new().unwrap();
 
         return CephXChallengeBlob{
-            server_challenge: 0,
+            server_challenge: server_challenge,
             client_challenge: rand_source.next_u64(),
         }
     }
-    fn encrypt(secret: Vec<u8>){
-        //secret = key
 
+    //Take both the server/client challenge and combine/encrypt them to produce the session key
+    fn encrypt_key(&self, secret: &[u8])->Result<Vec<u8>, String> {
+        let mut buffer:Vec<u8> = Vec::new();
+        buffer.write_u64::<LittleEndian>(self.server_challenge).unwrap();
+        buffer.write_u64::<LittleEndian>(self.client_challenge).unwrap();
+
+        let key = encrypt(&buffer[..], secret).unwrap();
+        return Ok(key);
     }
 }
 
 struct CephXRequestHeader{
-  request_type: u16,
+  request_type: CephxAuthProtocol,
 }
 
 struct CephXResponseHeader{
@@ -325,38 +345,9 @@ pub struct AuthHandler{
 }
 
 impl AuthHandler{
-    fn calculate_client_server_challenge(){
-        //client challenge is random bytes
-        //encrypt
-        //let challenge = CephXChallengeBlob::new();
-
-    }
     pub fn authenticate(self){
         match self.state{
             MonitorClientState::Negotiating => {
-                /*
-                //TODO: Translate me to Rust
-                if (!auth || (int)m->protocol != auth->get_protocol()) {
-                    delete auth;
-                    auth = get_auth_client_handler(cct, m->protocol, rotating_secrets);
-                    if (!auth) {
-                        ldout(cct, 10) << "no handler for protocol " << m->protocol << dendl;
-                        if (m->result == -ENOTSUP) {
-                            ldout(cct, 10) << "none of our auth protocols are supported by the server" << dendl;
-                            authenticate_err = m->result;
-                            auth_cond.SignalAll();
-                        }
-                        m->put();
-                        return;
-                    }
-                    auth->set_want_keys(want_keys);
-                    auth->init(entity_name);
-                    auth->set_global_id(global_id);
-                    } else {
-                        auth->reset();
-                    }
-                    */
-
                 //TODO: How do I mutate the state machine?
                 //self.state = MonitorClientState::Authenticating;
             },
@@ -371,64 +362,72 @@ impl AuthHandler{
     }
 }
 
-pub struct CryptoKey{
+pub struct CryptoKey<'a>{
     pub key_type: u16,
     pub created: serial::Utime,
 
     //secret is the keyring secret
-    pub secret: Vec<u8>, //what should bufferptr be?
+    //Example
+    //[client.admin]
+	//key = AQDPx11W2BAmFBAA7EUl60a17KxaT1eHLRTg6g==
+    pub secret: &'a [u8],
     pub key_handler: CryptoKeyHandler,
 }
 
-impl CryptoKey{
-    pub fn encode(&self){
-        //let data = try!(encrypt(data: &[u8], ceph_key: &[u8]));
+impl<'a> CryptoKey<'a>{
+    pub fn encode(&self, challenges: CephXChallengeBlob)->Result<Vec<u8>,
+        symmetriccipher::SymmetricCipherError>{
+        //return try!(encrypt(data: &[u8], secret));
+        return Ok(vec![]);
     }
     pub fn decode(&self){
         //let data = try!(decrypt(encrypted_data: &[u8], ceph_key: &[u8]));
     }
-    pub fn set_secret(&self){ //int type, const bufferptr& s, utime_t createdint type, const bufferptr& s, utime_t created
-        /*
-        _set_secret {
-        404   if (s.length() == 0) {
-        405     secret = s;
-        406     ckh.reset();
-        407     return 0;
-        408   }
-        409
-        410   CryptoHandler *ch = CryptoHandler::create(t);
-        411   if (ch) {
-        412     int ret = ch->validate_secret(s);
-        413     if (ret < 0) {
-        414       delete ch;
-        415       return ret;
-        416     }
-        417     string error;
-        418     ckh.reset(ch->get_key_handler(s, error));
-        419     delete ch;
-        420     if (error.length()) {
-        421       return -EIO;
-        422     }
-        423   }
-        424   type = t;
-        425   secret = s;
-        426   return 0;
-        }
+}
 
-        395   int r = _set_secret(type, s);
-        396   if (r < 0)
-        397     return r;
-        398   this->created = c;
-        399   return 0;
-         */
-    }
+fn cephx_calc_client_server_challenge(secret: &CryptoKey, server_challenge: u64, key: u64){
+    let mut b = CephXChallengeBlob::new(server_challenge);
+    b.encrypt_key(secret.secret);
+
+/*  //TODO: What is this??
+    //Client/Server have different byte orders
+
+    let k: u64 = 0;
+    const uint64_t *p = (const uint64_t *)enc.c_str();
+    for (int pos = 0; pos + sizeof(k) <= enc.length(); pos+=sizeof(k), p++)
+        //WTF is this?
+        k ^= mswab64(*p);
+        *key = k;
+    */
 }
 
 //Example taken from rust-crypto/blob/master/examples/symmetriccipher.rs
 
+//Taken directly from ceph's test files
+#[test]
+fn test_encrypt(){
+    //Cephx secret key
+     let secret: &[u8] = &[
+         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+         0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+     ];
+
+     let plaintext: &[u8] = &[
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+    ];
+    let expected_result: &[u8] = &[
+        0xb3, 0x8f, 0x5b, 0xc9, 0x35, 0x4c, 0xf8, 0xc6,
+        0x13, 0x15, 0x66, 0x6f, 0x37, 0xd7, 0x79, 0x3a,
+        0x11, 0x90, 0x7b, 0xe9, 0xd8, 0x3c, 0x35, 0x70,
+        0x58, 0x7b, 0x97, 0x9b, 0x03, 0xd2, 0xa5, 0x01,
+    ];
+    let result = encrypt(plaintext, secret).unwrap();
+    assert_eq!(result, expected_result);
+}
 // Encrypt a buffer with the given key and iv using
 // AES-128/CBC/Pkcs encryption.
-fn encrypt(data: &[u8], ceph_key: &[u8]) -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
+pub fn encrypt(data: &[u8], ceph_key: &[u8]) -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
 
     // Create an encryptor instance of the best performing
     // type available for the platform.
@@ -484,6 +483,32 @@ fn encrypt(data: &[u8], ceph_key: &[u8]) -> Result<Vec<u8>, symmetriccipher::Sym
     }
 
     Ok(final_result)
+}
+
+//Taken directly from ceph's test files
+#[test]
+fn test_decrypt(){
+    //Cephx secret key
+    let secret: &[u8] = &[
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    ];
+
+    //Ciphertext
+    let cipher: &[u8] = &[
+        0xb3, 0x8f, 0x5b, 0xc9, 0x35, 0x4c, 0xf8, 0xc6,
+        0x13, 0x15, 0x66, 0x6f, 0x37, 0xd7, 0x79, 0x3a,
+        0x11, 0x90, 0x7b, 0xe9, 0xd8, 0x3c, 0x35, 0x70,
+        0x58, 0x7b, 0x97, 0x9b, 0x03, 0xd2, 0xa5, 0x01,
+    ];
+
+    //Plaintext
+    let expected_result: Vec<u8> = vec![
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+    ];
+    let result = decrypt(cipher, secret).unwrap();
+    assert_eq!(result, expected_result);
 }
 
 // Decrypts a buffer with the given key and iv using

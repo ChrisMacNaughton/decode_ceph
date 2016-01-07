@@ -1,6 +1,6 @@
 [package]
 name = "decode_ceph"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Chris Holcombe <xfactor973@gmail.com>", "Chris MacNaughton <chmacnaughton@gmail.com>"]
 
 [dependencies]
@@ -15,6 +15,7 @@ num = "*"
 pcap = "*"
 rand = "*"
 rust-crypto = "*"
+rustc-serialize = "*"
 simple_logger = "*"
 time = "*"
 users = "*"

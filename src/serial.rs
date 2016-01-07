@@ -557,6 +557,7 @@ mod tests{
     #[test]
     fn test_connect(){
         //Connect to monitor port
+        /*
         let mut stream = TcpStream::connect("10.0.3.244:6789").unwrap();
         let mut buf: Vec<u8> = Vec::new();
         //recv banner
@@ -705,7 +706,6 @@ mod tests{
 
         //Then AuthReplyMessage with a secret
         //Then another AuthReplyMessage with 182 bytes?
-        /*
         let secret_key = "AQDPx11W2BAmFBAA7EUl60a17KxaT1eHLRTg6g==";
         let cephx_server_challenge = CephXClientAuthenticate::new(13266450841641414155, secret_key);
         println!("cephx_server_challenge {:?}", &cephx_server_challenge);

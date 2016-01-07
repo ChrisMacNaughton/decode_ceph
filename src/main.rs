@@ -1,24 +1,20 @@
 #![recursion_limit="100"]
 #![allow(dead_code)]
-#[macro_use] extern crate enum_primitive;
-#[macro_use] extern crate bitflags;
-#[macro_use] extern crate nom;
+extern crate ceph;
 #[macro_use] extern crate log;
-extern crate byteorder;
 extern crate influent;
-extern crate num;
 extern crate output_args;
 extern crate pcap;
 extern crate simple_logger;
-extern crate rustc_serialize;
 extern crate time;
 extern crate users;
 
-mod serial;
-mod crypto;
-mod mon_decode;
-mod common_decode;
-mod osd_decode;
+use ceph::sniffer::*;
+// use ceph::sniffer::serial::*;
+// use ceph::sniffer::crypto::*;
+// use ceph::sniffer::mon_decode::*;
+// use ceph::sniffer::common_decode::*;
+// use ceph::sniffer::osd_decode::*;
 
 use pcap::{Capture, Device};
 
@@ -41,10 +37,8 @@ mod tests{
     // use std::net::Ipv4Addr;
     use std::path::Path;
     use pcap::Capture;
-    // use log;
-    use nom;
     // use output_args::*;
-    use super::serial;
+    // use super::serial;
 
     #[test]
     fn test_pcap_parsing(){
@@ -107,8 +101,16 @@ impl<'a> Document<'a>{
     }
 }
 
+fn version() -> String {
+    format!("{}.{}.{}{}",
+        env!("CARGO_PKG_VERSION_MAJOR"),
+        env!("CARGO_PKG_VERSION_MINOR"),
+        env!("CARGO_PKG_VERSION_PATCH"),
+        option_env!("CARGO_PKG_VERSION_PRE").unwrap_or(""))
+}
+
 fn get_arguments() -> output_args::Args {
-    output_args::get_args()
+    output_args::get_args("decode_ceph", &version())
 }
 
 fn check_user()->Result<(), ()>{
@@ -241,25 +243,9 @@ fn log_msg_to_influx(header: &serial::PacketHeader, msg: &serial::Message, outpu
         let hosts = vec![host.as_ref()];
         let client = create_client(credentials, hosts);
 
-        let src_addr: String = match header.src_v4addr{
-            Some(addr) => addr.to_string(),
-            None => {
-                match header.src_v6addr{
-                    Some(addr) => addr.to_string(),
-                    None => "".to_string(),
-                }
-            },
-        };
-
-        let dst_addr: String = match header.dst_v4addr{
-            Some(addr) => addr.to_string(),
-            None => {
-                match header.dst_v6addr{
-                    Some(addr) => addr.to_string(),
-                    None => "".to_string(),
-                }
-            },
-        };
+        let src_addr = header.src_addr.ip_address();
+ 
+        let dst_addr = header.dst_addr.ip_address();
 
         let _ = match *msg{
             serial::Message::OsdOp(ref osd_op) => {
@@ -342,12 +328,11 @@ fn main() {
                     //We received a packet
                     Ok(packet) =>{
                         match serial::parse_ceph_packet(&packet.data) {
-                            nom::IResult::Done(_, result) => {
+                            Some(result) => {
                                 trace!("logging {:?}", result);
                                 let _ = process_packet(&result.header, &result.ceph_message, &args);
                             },
-                            nom::IResult::Error(e) => trace!("Problem Parsing: {:?}", e),
-                            _ => {}
+                            _ => {},
                         };
                         // break
                     },
